@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Weekly Bot Challenge · Standings</title>
+  <style>
+    :root {
+      --bg-0: #060a14;
+      --bg-1: #0a1122;
+      --card: rgba(255, 255, 255, 0.028);
+      --card-border: rgba(255, 255, 255, 0.07);
+      --ink: #eef2f8;
+      --muted: #6f8097;
+      --muted-dim: #47566b;
+      --green: #34d399;
+      --red: #f77066;
+      --gold: #f4c04f;
+      --silver: #c3ccda;
+      --bronze: #d6884a;
+      --blue: #7fa9ff;
+      font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      background:
+        radial-gradient(120% 60% at 50% -8%, rgba(94, 132, 214, 0.20), transparent 60%),
+        radial-gradient(80% 40% at 50% 0%, rgba(150, 180, 255, 0.10), transparent 55%),
+        linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 40%);
+      color: var(--ink);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0 0 auto 0;
+      height: 70vh;
+      background:
+        conic-gradient(from 175deg at 50% -10%,
+          transparent 0deg, rgba(180,205,255,.05) 8deg, transparent 16deg,
+          transparent 26deg, rgba(180,205,255,.06) 34deg, transparent 42deg,
+          transparent 52deg, rgba(180,205,255,.04) 60deg, transparent 68deg);
+      pointer-events: none;
+      z-index: 0;
+      mask-image: linear-gradient(180deg, #000 0%, transparent 85%);
+    }
+    .page { position: relative; z-index: 1; max-width: 620px; margin: 0 auto; padding: 40px 20px 56px; }
+
+    header { text-align: center; }
+    .org { color: var(--blue); font-weight: 700; font-size: 13px; letter-spacing: .32em; text-transform: uppercase; margin-bottom: 14px; }
+    h1 {
+      margin: 0; font-size: clamp(36px, 10vw, 70px); font-weight: 800;
+      letter-spacing: -.02em; line-height: .92;
+      background: linear-gradient(180deg, #ffffff, #cdd7e6);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .subtitle { margin-top: 16px; color: var(--muted); font-weight: 600; font-size: 15px; letter-spacing: .26em; text-transform: uppercase; }
+    .scopebar { display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; margin: 24px auto 10px; }
+    .scope-pill { border: 1px solid var(--card-border); background: rgba(255,255,255,.04); color: var(--muted); border-radius: 99px; padding: 8px 16px; font-size: 13px; font-weight: 700; letter-spacing: .04em; cursor: pointer; font-family: inherit; }
+    .scope-pill:hover { color: #fff; }
+    .scope-pill.active { background: linear-gradient(90deg, #ffffff, #dbe4f5); color: #0b1020; border-color: transparent; }
+    .daytabs { display: flex; gap: 6px; }
+    .daytab { position: relative; width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--card-border); background: rgba(255,255,255,.04); color: var(--muted); font-weight: 800; font-size: 14px; cursor: pointer; display: grid; place-items: center; font-family: inherit; }
+    .daytab.past { color: #aeb9c9; }
+    .daytab.live { color: #fff; border-color: rgba(244,192,79,.45); }
+    .daytab.future { opacity: .3; cursor: not-allowed; }
+    .daytab.active { background: linear-gradient(180deg, #ffffff, #dbe4f5); color: #0b1020; border-color: transparent; }
+    .daytab .dot { position: absolute; top: -3px; right: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 2px var(--bg-0); animation: pulse 1.6s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+    .progress-label { text-align: center; color: var(--muted-dim); font-size: 12px; letter-spacing: .22em; text-transform: uppercase; font-weight: 600; margin-bottom: 34px; }
+
+    .podium { display: grid; grid-template-columns: 1fr 1.18fr 1fr; align-items: end; gap: 14px; margin-bottom: 20px; }
+    .pod {
+      position: relative; border: 1px solid var(--card-border);
+      background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.012));
+      border-radius: 22px; padding: 22px 16px 18px; text-align: center;
+    }
+    .pod .avatar { width: 74px; height: 74px; border-radius: 50%; margin: 0 auto 14px; display: grid; place-items: center; font-size: 30px; position: relative; }
+    .pod .badge {
+      position: absolute; top: -4px; right: 50%; transform: translateX(230%);
+      width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+      font-size: 13px; font-weight: 800; color: #10151f; border: 2px solid var(--bg-0);
+    }
+    .pod .name { font-weight: 700; font-size: 15px; line-height: 1.15; margin-bottom: 4px; overflow-wrap: anywhere; }
+    .pod .rows { border-top: 1px solid rgba(255,255,255,.07); margin-top: 12px; padding-top: 12px; display: grid; gap: 7px; }
+    .pod .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+    .pod .row .k { color: var(--muted-dim); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; font-weight: 600; }
+    .pod .row .v { font-weight: 700; font-size: 15px; }
+
+    .pod-1 {
+      transform: translateY(-14px); border-color: rgba(244, 192, 79, .55);
+      background: linear-gradient(180deg, rgba(244,192,79,.10), rgba(244,192,79,.02));
+      box-shadow: 0 0 0 1px rgba(244,192,79,.15), 0 20px 60px -20px rgba(244,192,79,.35);
+    }
+    .pod-1 .avatar {
+      width: 92px; height: 92px; font-size: 40px;
+      background: radial-gradient(circle at 50% 35%, #ffe08a, #e6ab3e 60%, #c07f26);
+      box-shadow: 0 0 34px rgba(244,192,79,.45);
+    }
+    .pod-1 .name { font-size: 18px; }
+    .pod-1 .badge { background: linear-gradient(180deg,#ffe08a,#e6ab3e); }
+
+    .avatar.gold { background: radial-gradient(circle at 50% 35%, #ffe08a, #e6ab3e 60%, #c07f26); }
+    .avatar.silver { background: radial-gradient(circle at 50% 35%, #eef2f8, #b9c3d3 60%, #8b96a8); }
+    .avatar.bronze { background: radial-gradient(circle at 50% 35%, #f0b483, #d6884a 60%, #a75f2c); }
+    .badge.gold { background: linear-gradient(180deg,#ffe08a,#e6ab3e); }
+    .badge.silver { background: linear-gradient(180deg,#eef2f8,#aeb9c9); }
+    .badge.bronze { background: linear-gradient(180deg,#f0b483,#c9793d); color:#1a120b; }
+
+    .lead-pill {
+      margin-top: 14px; width: 100%; border: 1px solid rgba(244,192,79,.4);
+      background: rgba(244,192,79,.08); color: var(--gold);
+      border-radius: 12px; padding: 10px 8px; font-weight: 700; font-size: 12.5px;
+      letter-spacing: .04em; white-space: nowrap;
+      display: flex; gap: 6px; justify-content: center; align-items: center;
+    }
+    .lead-pill .who { color: #f0e2c0; }
+
+    .pos { color: var(--green); }
+    .neg { color: var(--red); }
+    .zero { color: var(--muted); }
+
+    /* cards are links to each player's share page — strip default link styling */
+    .card-link { display: block; text-decoration: none; color: inherit; -webkit-tap-highlight-color: transparent; }
+    .card-link:hover .pod, .card-link:hover .item { border-color: rgba(255, 255, 255, 0.22); }
+
+    .list { display: grid; gap: 12px; margin-top: 8px; }
+    .item { display: flex; align-items: center; gap: 16px; border: 1px solid var(--card-border); background: var(--card); border-radius: 18px; padding: 18px 22px; }
+    .item .num { width: 40px; height: 40px; flex: none; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 16px; background: rgba(255,255,255,.05); color: var(--muted); }
+    .item .who { flex: 1; min-width: 0; }
+    .item .who .nm { font-weight: 700; font-size: 18px; }
+    .item .who .tag { display: inline-block; margin-left: 10px; font-size: 11px; font-weight: 700; letter-spacing: .14em; color: var(--red); vertical-align: middle; }
+    .item .stat { text-align: right; flex: none; }
+    .item .stat .big { font-weight: 800; font-size: 20px; }
+    .item .stat .sub { color: var(--muted-dim); font-size: 13px; margin-top: 3px; }
+    .item.elim { opacity: .62; }
+    .item.elim .num { background: rgba(247,112,102,.10); color: var(--red); font-size: 18px; }
+
+    .rules { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin: 34px 0 22px; }
+    .chip { border: 1px solid var(--card-border); background: rgba(255,255,255,.03); color: #9fb0c6; border-radius: 99px; padding: 11px 18px; font-size: 14px; font-weight: 600; }
+    .chip.warn { border-color: rgba(247,112,102,.28); color: #e79a92; }
+    footer { text-align: center; color: var(--muted-dim); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; font-weight: 600; margin-top: 8px; }
+    .empty { text-align: center; color: var(--muted); padding: 60px 0; }
+
+    /* ---------- manage panel ---------- */
+    .manage-btn {
+      position: fixed; top: 16px; right: 16px; z-index: 30;
+      border: 1px solid var(--card-border); background: rgba(15,22,38,.7); backdrop-filter: blur(6px);
+      color: #b7c4d8; border-radius: 99px; padding: 9px 15px; font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .manage-btn:hover { color: #fff; border-color: rgba(255,255,255,.2); }
+    .overlay { position: fixed; inset: 0; z-index: 40; background: rgba(4,7,14,.72); backdrop-filter: blur(4px); display: none; align-items: flex-start; justify-content: center; padding: 24px 14px; overflow-y: auto; }
+    .overlay.open { display: flex; }
+    .panel {
+      width: 100%; max-width: 460px; background: #0d1524; border: 1px solid var(--card-border);
+      border-radius: 20px; padding: 22px; box-shadow: 0 30px 80px -20px rgba(0,0,0,.7);
+    }
+    .panel h2 { margin: 0 0 4px; font-size: 20px; }
+    .panel .hint { color: var(--muted); font-size: 13px; margin: 0 0 18px; line-height: 1.5; }
+    .panel .close { float: right; background: none; border: none; color: var(--muted); font-size: 22px; cursor: pointer; line-height: 1; }
+    .roster { display: grid; gap: 8px; margin-bottom: 18px; }
+    .rrow { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,.03); border: 1px solid var(--card-border); border-radius: 12px; padding: 10px 12px; }
+    .rrow .rn { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .rrow .rm { color: var(--muted-dim); font-size: 12px; white-space: nowrap; }
+    .rrow .del { background: none; border: none; color: var(--red); cursor: pointer; font-size: 16px; padding: 0 2px; }
+    .field { display: grid; gap: 6px; margin-bottom: 10px; }
+    .field label { font-size: 12px; color: var(--muted); letter-spacing: .04em; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    input[type=text], input[type=number] {
+      width: 100%; background: rgba(255,255,255,.04); border: 1px solid var(--card-border);
+      border-radius: 10px; padding: 10px 12px; color: var(--ink); font-size: 14px; font-family: inherit;
+    }
+    input:focus { outline: none; border-color: var(--blue); }
+    .checkline { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; margin: 4px 0 14px; }
+    .btn { border: 1px solid var(--card-border); background: rgba(255,255,255,.05); color: var(--ink); border-radius: 11px; padding: 11px 14px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .btn:hover { border-color: rgba(255,255,255,.2); }
+    .btn.primary { background: linear-gradient(180deg, #3f6fd6, #345cc0); border-color: transparent; color: #fff; width: 100%; }
+    .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+    .btn-row .btn { flex: 1; }
+    .divider { height: 1px; background: var(--card-border); margin: 18px 0; }
+    .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 50; background: #162034; border: 1px solid var(--card-border); color: var(--ink); padding: 10px 16px; border-radius: 10px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+    .toast.show { opacity: 1; }
+
+    /* Phones: shrink the 3-up podium so it never overflows a narrow screen. */
+    @media (max-width: 560px) {
+      .page { padding: 28px 12px 44px; }
+      .podium { gap: 7px; }
+      .pod { padding: 14px 9px 12px; border-radius: 16px; }
+      .pod .avatar { width: 50px; height: 50px; font-size: 21px; margin-bottom: 10px; }
+      .pod-1 .avatar { width: 60px; height: 60px; font-size: 26px; }
+      .pod .badge { width: 19px; height: 19px; font-size: 10px; transform: translateX(200%); }
+      .pod .name { font-size: 12.5px; }
+      .pod-1 .name { font-size: 13px; letter-spacing: -0.01em; }
+      .pod-1 { transform: translateY(-8px); }
+      .pod .rows { gap: 7px; margin-top: 10px; padding-top: 10px; }
+      .pod .row { flex-direction: column; align-items: flex-start; gap: 1px; }
+      .pod .row .k { font-size: 8.5px; letter-spacing: .07em; }
+      .pod .row .v { font-size: 13px; }
+      .lead-pill { font-size: 10px; padding: 7px 4px; margin-top: 10px; letter-spacing: 0; }
+      .item { padding: 15px 16px; gap: 12px; }
+      .item .who .nm { font-size: 16px; }
+      .item .stat .big { font-size: 18px; }
+      .item .stat .sub { font-size: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <button class="manage-btn" id="manageBtn">⚙ Manage</button>
+  <div class="page" id="app"><div class="empty">Loading standings…</div></div>
+
+  <div class="overlay" id="overlay">
+    <div class="panel" id="panel"></div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <script type="module">
+    import { fetchWeeklyStats, parseAccountId } from "./src/topstep-api.mjs";
+    import { weekSchedule } from "./src/calendar.mjs";
+    import { computeMetrics, buildRow, rankByScope, challengeInfo } from "./src/leaderboard.mjs";
+
+    const LS_KEY = "botchallenge.config";
+    const $ = (id) => document.getElementById(id);
+
+    /* ---------- formatting ---------- */
+    const money = (n, { sign = false } = {}) => {
+      if (n == null || !Number.isFinite(Number(n))) return "—";
+      const v = Number(n);
+      const abs = Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      if (v === 0) return "$" + abs;
+      return (v > 0 ? (sign ? "+" : "") : "-") + "$" + abs;
+    };
+    const whole = (n) => (Number.isFinite(Number(n)) ? "$" + Number(n).toLocaleString() : "—");
+    const pct = (n) => {
+      if (n == null || !Number.isFinite(Number(n))) return "—";
+      const v = Number(n);
+      if (v === 0) return "0.00%";
+      const dp = Math.abs(v) < 0.1 ? 3 : 2;
+      return (v > 0 ? "+" : "-") + Math.abs(v).toFixed(dp) + "%";
+    };
+    const cls = (n) => (n > 0 ? "pos" : n < 0 ? "neg" : "zero");
+    const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+    /* ---------- render (scope-aware: overall or a single day) ---------- */
+    const MEDAL = { 1: "gold", 2: "silver", 3: "bronze" };
+    let DATA = null;      // full leaderboard object (rich rows + schedule)
+    let SCOPE = "overall"; // "overall" | day number
+
+    const daysOf = () => (DATA?.schedule?.days || []);
+    const dayState = (n) => daysOf().find((d) => d.day === n)?.state;
+
+    function leadWho() {
+      if (SCOPE === "overall") return `Day ${DATA?.schedule?.currentDay ?? 0}`;
+      return dayState(SCOPE) === "live" ? "Live" : `Day ${SCOPE}`;
+    }
+    function scopeTitle() {
+      const sc = DATA?.schedule || {};
+      if (SCOPE === "overall") return `Day ${sc.currentDay ?? 0} of ${sc.totalDays ?? 5} · Standings`;
+      const st = dayState(SCOPE);
+      return `Day ${SCOPE} · ${st === "live" ? "Live" : st === "future" ? "Upcoming" : "Final"}`;
+    }
+    function scopeSubtitle(rows) {
+      const sc = DATA?.schedule || {};
+      if (SCOPE === "overall") return `Day ${sc.currentDay ?? 0} of ${sc.totalDays ?? 5} · ${sc.phase === "done" ? "week complete" : "in progress"}`;
+      const d = daysOf().find((x) => x.day === SCOPE);
+      if (!d) return "";
+      const nice = new Date(d.date + "T12:00:00Z").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+      if (d.state === "live") return `${nice} · ${rows.some((r) => r.traded) ? "live · updating" : "live · no trades yet"}`;
+      return `${nice} · ${d.state === "future" ? "upcoming" : "final"}`;
+    }
+
+    // Wrap a card in a link to the competitor's public share page (opens in a new tab).
+    const linked = (inner, url) =>
+      url ? `<a class="card-link" href="${esc(url)}" target="_blank" rel="noreferrer">${inner}</a>` : inner;
+
+    function podCard(row, place) {
+      const tone = MEDAL[place];
+      const lead = place === 1 ? `<div class="lead-pill">LEADING&nbsp; 🔥 <span class="who">${esc(leadWho())}</span></div>` : "";
+      return linked(`
+        <div class="pod pod-${place}">
+          <div class="avatar ${tone}">${place === 1 ? "🏆" : "🤖"}<span class="badge ${tone}">${place}</span></div>
+          <div class="name">${esc(row.name)}</div>
+          <div class="rows">
+            <div class="row"><span class="k">Return</span><span class="v ${cls(row.return_pct)}">${pct(row.return_pct)}</span></div>
+            <div class="row"><span class="k">Week</span><span class="v ${cls(row.week_pnl)}">${money(row.week_pnl, { sign: true })}</span></div>
+            <div class="row"><span class="k">Today</span><span class="v ${cls(row.today_pnl)}">${money(row.today_pnl, { sign: true })}</span></div>
+            <div class="row"><span class="k">Account</span><span class="v" style="color:var(--muted)">${whole(row.account_size)}</span></div>
+          </div>${lead}
+        </div>`, row.url);
+    }
+    const listItem = (row) => linked(`
+      <div class="item">
+        <div class="num">${row.rank}</div>
+        <div class="who"><span class="nm">${esc(row.name)}</span></div>
+        <div class="stat">
+          <div class="big ${cls(row.return_pct)}">${pct(row.return_pct)}</div>
+          <div class="sub">Wk <span class="${cls(row.week_pnl)}">${money(row.week_pnl, { sign: true })}</span> · Today <span class="${cls(row.today_pnl)}">${money(row.today_pnl, { sign: true })}</span></div>
+        </div>
+      </div>`, row.url);
+
+    function tabsHtml() {
+      const dayTabs = daysOf().map((d) => {
+        const active = SCOPE === d.day ? " active" : "";
+        const dot = d.state === "live" ? `<span class="dot"></span>` : "";
+        return `<button class="daytab ${d.state}${active}" data-scope="${d.day}"${d.state === "future" ? " disabled" : ""}>${d.day}${dot}</button>`;
+      }).join("");
+      return `<div class="scopebar">
+        <button class="scope-pill${SCOPE === "overall" ? " active" : ""}" data-scope="overall">Overall</button>
+        <div class="daytabs">${dayTabs}</div>
+      </div>`;
+    }
+
+    function draw() {
+      if (!DATA) return;
+      const ch = DATA.challenge || {};
+      const rows = rankByScope(DATA.rows || [], SCOPE, DATA.schedule?.currentDay ?? 0);
+      const podium = rows.slice(0, 3);
+      const rest = rows.slice(3);
+      const order = [podium[2], podium[0], podium[1]];
+      const placeOf = [3, 1, 2];
+      const rules = (ch.rules || []).map((r, i) => `<div class="chip${i > 0 ? " warn" : ""}">${esc(r)}</div>`).join("");
+      const updated = DATA.generated_at
+        ? new Date(DATA.generated_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+        : "";
+
+      $("app").innerHTML = `
+        <header>
+          <div class="org">🤖 ${esc(ch.org || "Algo Traderz")}</div>
+          <h1>${esc((ch.title || "Bot Challenge")).toUpperCase()}</h1>
+          <div class="subtitle">${esc(scopeTitle())}</div>
+          ${tabsHtml()}
+          <div class="progress-label">${esc(scopeSubtitle(rows))}</div>
+        </header>
+        ${podium.length ? `<section class="podium">${order.map((r, i) => (r ? podCard(r, placeOf[i]) : `<div class="pod" style="visibility:hidden"></div>`)).join("")}</section>` : ""}
+        ${rest.length ? `<section class="list">${rest.map(listItem).join("")}</section>` : ""}
+        ${rules ? `<section class="rules">${rules}</section>` : ""}
+        <footer>Last updated · ${esc(updated)}</footer>`;
+
+      $("app").querySelectorAll("[data-scope]").forEach((b) => {
+        if (b.disabled) return;
+        b.onclick = () => { SCOPE = b.dataset.scope === "overall" ? "overall" : Number(b.dataset.scope); draw(); };
+      });
+    }
+    const showEmpty = (msg) => { $("app").innerHTML = `<div class="empty">${msg || "No standings yet."}</div>`; };
+
+    /* ---------- config: url ?r= > localStorage > participants.json ---------- */
+    const encodeConfig = (o) => btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(o))));
+    const decodeConfig = (s) => JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(s), (c) => c.charCodeAt(0))));
+
+    function normalizeConfig(raw) {
+      if (!raw) return null;
+      if (Array.isArray(raw)) return { challenge: {}, participants: raw };
+      return { challenge: raw.challenge ?? {}, participants: raw.participants ?? [] };
+    }
+    async function loadConfig() {
+      const u = new URL(location.href);
+      const r = u.searchParams.get("r");
+      if (r) { try { return { cfg: normalizeConfig(decodeConfig(r)), fromUrl: true }; } catch {} }
+      const ls = localStorage.getItem(LS_KEY);
+      if (ls) { try { return { cfg: normalizeConfig(JSON.parse(ls)), fromUrl: false }; } catch {} }
+      try {
+        const res = await fetch("./participants.json", { cache: "no-store" });
+        if (res.ok) return { cfg: normalizeConfig(await res.json()), fromUrl: false };
+      } catch {}
+      return { cfg: null, fromUrl: false };
+    }
+
+    let CONFIG = { challenge: {}, participants: [] };
+
+    function persist() { try { localStorage.setItem(LS_KEY, JSON.stringify(CONFIG)); } catch {} }
+
+    /* ---------- build the board live from config (with snapshot fallback) ---------- */
+    async function buildLive(config) {
+      const ch = config.challenge || {};
+      const schedule = ch.weekStart && ch.weekEnd
+        ? { ...weekSchedule(), weekStart: ch.weekStart, weekEnd: ch.weekEnd }
+        : weekSchedule();
+      const range = { start: schedule.weekStart, end: schedule.weekEnd };
+      const rows = (await Promise.all((config.participants || []).map(async (p) => {
+        const accountId = parseAccountId(p.accountId ?? p.share ?? p.url);
+        if (accountId == null) return null;
+        try {
+          const metrics = computeMetrics(await fetchWeeklyStats(accountId, range), schedule.days, { currentDay: schedule.currentDay });
+          return buildRow(p, accountId, metrics, { source: "live" });
+        } catch {
+          return buildRow(p, accountId, {}, { source: "error" });
+        }
+      }))).filter(Boolean);
+      return {
+        generated_at: new Date().toISOString(),
+        week: { start: schedule.weekStart, end: schedule.weekEnd },
+        schedule: { currentDay: schedule.currentDay, totalDays: schedule.totalDays, phase: schedule.phase, days: schedule.days },
+        challenge: challengeInfo(ch),
+        rows
+      };
+    }
+
+    async function refresh() {
+      try {
+        DATA = await buildLive(CONFIG);
+        draw();
+      } catch (e) {
+        try { DATA = await (await fetch("./data/leaderboard.json", { cache: "no-store" })).json(); draw(); }
+        catch { showEmpty("Couldn't load standings."); }
+      }
+    }
+
+    /* ---------- manage panel ---------- */
+    const toast = (msg) => { const t = $("toast"); t.textContent = msg; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 1600); };
+
+    function renderPanel() {
+      const ps = CONFIG.participants || [];
+      const ch = CONFIG.challenge || {};
+      const rosterHtml = ps.length ? ps.map((p, i) => {
+        const id = parseAccountId(p.accountId ?? p.share ?? p.url);
+        return `<div class="rrow">
+          <span class="rn">${esc(p.name || p.discord || "—")}</span>
+          <span class="rm">${id != null ? "account " + id : "no share link"}</span>
+          <button class="del" data-i="${i}" title="Remove">✕</button>
+        </div>`;
+      }).join("") : `<div class="hint">No competitors yet. Add one below.</div>`;
+
+      $("panel").innerHTML = `
+        <button class="close" id="closeBtn">×</button>
+        <h2>Manage competitors</h2>
+        <p class="hint">Just a Discord username and a public TopstepX share link — account size, P&amp;L and % return are pulled live from the share. Saved to this device and to a shareable link.</p>
+
+        <div class="roster">${rosterHtml}</div>
+        <div class="divider"></div>
+
+        <div class="field"><label>Discord username</label><input type="text" id="fName" placeholder="e.g. ridingthewave" /></div>
+        <div class="field"><label>Share link</label><input type="text" id="fLink" placeholder="https://topstepx.com/share/stats?share=24801853" /></div>
+        <button class="btn primary" id="addBtn">Add competitor</button>
+
+        <div class="divider"></div>
+        <div class="grid2">
+          <div class="field"><label>Challenge title</label><input type="text" id="fTitle" value="${esc(ch.title || "Bot Challenge")}" /></div>
+          <div class="field"><label>Org</label><input type="text" id="fOrg" value="${esc(ch.org || "Algo Traderz")}" /></div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn" id="copyBtn">Copy participants.json</button>
+          <button class="btn" id="shareBtn">Copy share link</button>
+        </div>
+        <div class="btn-row"><button class="btn" id="resetBtn">Reset to published</button></div>`;
+
+      $("closeBtn").onclick = closePanel;
+      $("addBtn").onclick = addCompetitor;
+      $("copyBtn").onclick = copyJson;
+      $("shareBtn").onclick = copyShareLink;
+      $("resetBtn").onclick = resetConfig;
+      $("panel").querySelectorAll(".del").forEach((b) => (b.onclick = () => removeCompetitor(+b.dataset.i)));
+    }
+
+    function readChallengeInputs() {
+      CONFIG.challenge = {
+        ...CONFIG.challenge,
+        title: $("fTitle").value.trim() || "Bot Challenge",
+        org: $("fOrg").value.trim() || "Algo Traderz"
+      };
+    }
+    function addCompetitor() {
+      readChallengeInputs();
+      const name = $("fName").value.trim();
+      const link = $("fLink").value.trim();
+      if (!name) { toast("Enter a Discord username"); return; }
+      if (parseAccountId(link) == null) { toast("Enter a valid share link"); return; }
+      CONFIG.participants = [...(CONFIG.participants || []), { name, url: link }];
+      persist(); renderPanel(); refresh(); toast("Added " + name);
+    }
+    function removeCompetitor(i) { CONFIG.participants.splice(i, 1); persist(); renderPanel(); refresh(); }
+    function resetConfig() {
+      localStorage.removeItem(LS_KEY);
+      history.replaceState(null, "", location.pathname);
+      toast("Reset to published");
+      init();
+    }
+    async function copyJson() {
+      readChallengeInputs(); persist();
+      await navigator.clipboard.writeText(JSON.stringify(CONFIG, null, 2)).catch(() => {});
+      toast("participants.json copied");
+    }
+    async function copyShareLink() {
+      readChallengeInputs(); persist();
+      const url = location.origin + location.pathname + "?r=" + encodeConfig(CONFIG);
+      await navigator.clipboard.writeText(url).catch(() => {});
+      toast("Share link copied");
+    }
+    const openPanel = () => { renderPanel(); $("overlay").classList.add("open"); };
+    const closePanel = () => $("overlay").classList.remove("open");
+
+    $("manageBtn").onclick = openPanel;
+    $("overlay").onclick = (e) => { if (e.target === $("overlay")) closePanel(); };
+
+    /* ---------- init ---------- */
+    let refreshTimer = null;
+    async function init() {
+      const { cfg } = await loadConfig();
+      if (!cfg) {
+        // No config anywhere — show the committed snapshot if present.
+        try { DATA = await (await fetch("./data/leaderboard.json", { cache: "no-store" })).json(); draw(); }
+        catch { showEmpty('No standings yet. Add competitors with the ⚙ Manage button, or run <code>npm run scrape</code>.'); }
+        return;
+      }
+      CONFIG = cfg;
+      await refresh();
+      // Keep the current (unfinished) day's P&L in motion.
+      if (refreshTimer) clearInterval(refreshTimer);
+      refreshTimer = setInterval(refresh, 60000);
+    }
+    init();
+  </script>
+</body>
+</html>

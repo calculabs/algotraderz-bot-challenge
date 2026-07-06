@@ -1,0 +1,16 @@
+{
+  "challenge": {
+    "title": "Weekly Bot Challenge",
+    "org": "Algo Traderz",
+    "rules": ["Highest % return wins", "No manual trades", "Max loss limit"]
+  },
+  "participants": [
+    { "name": "blindsipher", "url": "https://topstepx.com/share/stats?share=24972138" },
+    { "name": "Scalpface", "url": "https://topstepx.com/share/stats?share=25101868" },
+    { "name": "krishhy", "url": "https://topstepx.com/share/stats?share=24961681" },
+    { "name": "dr.feelgood0777", "url": "https://topstepx.com/share/stats?share=24934992" },
+    { "name": "Carmen", "url": "https://topstepx.com/share/stats?share=25018191" },
+    { "name": "Daniel", "url": "https://topstepx.com/share/stats?share=24481546" },
+    { "name": "ridingthewave", "url": "https://topstepx.com/share/stats?share=24801853" }
+  ]
+}

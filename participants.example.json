@@ -1,0 +1,11 @@
+{
+  "challenge": {
+    "title": "Bot Challenge",
+    "org": "Algo Traderz",
+    "rules": ["Highest % return wins", "No manual trades", "Max loss limit"]
+  },
+  "participants": [
+    { "name": "alice", "url": "https://topstepx.com/share/stats?share=24801853" },
+    { "name": "bob", "url": "https://topstepx.com/share/stats?share=REPLACE_WITH_SHARE_ID" }
+  ]
+}

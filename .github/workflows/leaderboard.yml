@@ -1,0 +1,50 @@
+name: Update leaderboard & deploy
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+  schedule:
+    # Refresh every 30 min. Cron is UTC; the competition runs Sun open -> Fri close.
+    - cron: "*/30 * * * *"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two deploys at once; let a fresh run supersede an in-flight one.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # No dependencies — the scrape uses Node's built-in fetch only.
+      - name: Build leaderboard.json from the public API
+        run: node src/scrape-shares.mjs
+      - name: Assemble static site
+        run: |
+          mkdir -p _site/data
+          cp index.html participants.json _site/
+          cp -r src _site/src
+          cp data/leaderboard.json data/leaderboard.csv _site/data/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

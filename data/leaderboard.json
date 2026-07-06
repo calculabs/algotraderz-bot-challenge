@@ -1,0 +1,568 @@
+{
+  "generated_at": "2026-07-06T23:39:44.600Z",
+  "week": {
+    "start": "2026-07-05T22:00:00.600Z",
+    "end": "2026-07-12T22:00:00.600Z"
+  },
+  "schedule": {
+    "currentDay": 2,
+    "totalDays": 5,
+    "phase": "active",
+    "days": [
+      {
+        "day": 1,
+        "date": "2026-07-06",
+        "state": "past"
+      },
+      {
+        "day": 2,
+        "date": "2026-07-07",
+        "state": "live"
+      },
+      {
+        "day": 3,
+        "date": "2026-07-08",
+        "state": "future"
+      },
+      {
+        "day": 4,
+        "date": "2026-07-09",
+        "state": "future"
+      },
+      {
+        "day": 5,
+        "date": "2026-07-10",
+        "state": "future"
+      }
+    ]
+  },
+  "challenge": {
+    "title": "Weekly Bot Challenge",
+    "org": "Algo Traderz",
+    "rules": [
+      "Highest % return wins",
+      "No manual trades",
+      "Max loss limit"
+    ]
+  },
+  "rows": [
+    {
+      "name": "blindsipher",
+      "account_id": 24972138,
+      "url": "https://topstepx.com/share/stats?share=24972138",
+      "source": "live",
+      "shared": true,
+      "error": null,
+      "account_size": 150000,
+      "balance": 150227.6,
+      "days_traded": 1,
+      "overall": {
+        "pnl": -5.08,
+        "return_pct": -0.0034,
+        "trades": 14,
+        "balance": 150227.6
+      },
+      "days": {
+        "1": {
+          "day": 1,
+          "date": "2026-07-06",
+          "traded": true,
+          "live": false,
+          "pnl": -5.08,
+          "return_pct": -0.0034,
+          "trades": 14,
+          "win_rate": 50,
+          "balance": 150227.6
+        },
+        "2": {
+          "day": 2,
+          "date": "2026-07-07",
+          "traded": false,
+          "live": true,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "3": {
+          "day": 3,
+          "date": "2026-07-08",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "4": {
+          "day": 4,
+          "date": "2026-07-09",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "5": {
+          "day": 5,
+          "date": "2026-07-10",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        }
+      }
+    },
+    {
+      "name": "Scalpface",
+      "account_id": 25101868,
+      "url": "https://topstepx.com/share/stats?share=25101868",
+      "source": "live",
+      "shared": true,
+      "error": null,
+      "account_size": 100000,
+      "balance": null,
+      "days_traded": 0,
+      "overall": {
+        "pnl": 0,
+        "return_pct": 0,
+        "trades": 0,
+        "balance": null
+      },
+      "days": {
+        "1": {
+          "day": 1,
+          "date": "2026-07-06",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "2": {
+          "day": 2,
+          "date": "2026-07-07",
+          "traded": false,
+          "live": true,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "3": {
+          "day": 3,
+          "date": "2026-07-08",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "4": {
+          "day": 4,
+          "date": "2026-07-09",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "5": {
+          "day": 5,
+          "date": "2026-07-10",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        }
+      }
+    },
+    {
+      "name": "krishhy",
+      "account_id": 24961681,
+      "url": "https://topstepx.com/share/stats?share=24961681",
+      "source": "live",
+      "shared": true,
+      "error": null,
+      "account_size": 150000,
+      "balance": 150757.24,
+      "days_traded": 1,
+      "overall": {
+        "pnl": 757.24,
+        "return_pct": 0.5048,
+        "trades": 4,
+        "balance": 150757.24
+      },
+      "days": {
+        "1": {
+          "day": 1,
+          "date": "2026-07-06",
+          "traded": true,
+          "live": false,
+          "pnl": 757.24,
+          "return_pct": 0.5048,
+          "trades": 4,
+          "win_rate": 75,
+          "balance": 150757.24
+        },
+        "2": {
+          "day": 2,
+          "date": "2026-07-07",
+          "traded": false,
+          "live": true,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "3": {
+          "day": 3,
+          "date": "2026-07-08",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "4": {
+          "day": 4,
+          "date": "2026-07-09",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "5": {
+          "day": 5,
+          "date": "2026-07-10",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        }
+      }
+    },
+    {
+      "name": "dr.feelgood0777",
+      "account_id": 24934992,
+      "url": "https://topstepx.com/share/stats?share=24934992",
+      "source": "live",
+      "shared": true,
+      "error": null,
+      "account_size": 150000,
+      "balance": 191703.08,
+      "days_traded": 2,
+      "overall": {
+        "pnl": 3802.8,
+        "return_pct": 2.5352,
+        "trades": 235,
+        "balance": 191703.08
+      },
+      "days": {
+        "1": {
+          "day": 1,
+          "date": "2026-07-06",
+          "traded": true,
+          "live": false,
+          "pnl": 4001.1,
+          "return_pct": 2.6674,
+          "trades": 234,
+          "win_rate": 53.42,
+          "balance": 191901.38
+        },
+        "2": {
+          "day": 2,
+          "date": "2026-07-07",
+          "traded": true,
+          "live": true,
+          "pnl": -198.3,
+          "return_pct": -0.1322,
+          "trades": 1,
+          "win_rate": 0,
+          "balance": 191703.08
+        },
+        "3": {
+          "day": 3,
+          "date": "2026-07-08",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "4": {
+          "day": 4,
+          "date": "2026-07-09",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "5": {
+          "day": 5,
+          "date": "2026-07-10",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        }
+      }
+    },
+    {
+      "name": "Carmen",
+      "account_id": 25018191,
+      "url": "https://topstepx.com/share/stats?share=25018191",
+      "source": "live",
+      "shared": true,
+      "error": null,
+      "account_size": 50000,
+      "balance": 46695.5,
+      "days_traded": 2,
+      "overall": {
+        "pnl": -3304.5,
+        "return_pct": -6.609,
+        "trades": 50,
+        "balance": 46695.5
+      },
+      "days": {
+        "1": {
+          "day": 1,
+          "date": "2026-07-06",
+          "traded": true,
+          "live": false,
+          "pnl": -2053.36,
+          "return_pct": -4.1067,
+          "trades": 29,
+          "win_rate": 3.45,
+          "balance": 47946.64
+        },
+        "2": {
+          "day": 2,
+          "date": "2026-07-07",
+          "traded": true,
+          "live": true,
+          "pnl": -1251.14,
+          "return_pct": -2.5023,
+          "trades": 21,
+          "win_rate": 23.81,
+          "balance": 46695.5
+        },
+        "3": {
+          "day": 3,
+          "date": "2026-07-08",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "4": {
+          "day": 4,
+          "date": "2026-07-09",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "5": {
+          "day": 5,
+          "date": "2026-07-10",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        }
+      }
+    },
+    {
+      "name": "Daniel",
+      "account_id": 24481546,
+      "url": "https://topstepx.com/share/stats?share=24481546",
+      "source": "live",
+      "shared": true,
+      "error": null,
+      "account_size": 50000,
+      "balance": 50766.58,
+      "days_traded": 1,
+      "overall": {
+        "pnl": -885.04,
+        "return_pct": -1.7701,
+        "trades": 9,
+        "balance": 50766.58
+      },
+      "days": {
+        "1": {
+          "day": 1,
+          "date": "2026-07-06",
+          "traded": true,
+          "live": false,
+          "pnl": -885.04,
+          "return_pct": -1.7701,
+          "trades": 9,
+          "win_rate": 11.11,
+          "balance": 50766.58
+        },
+        "2": {
+          "day": 2,
+          "date": "2026-07-07",
+          "traded": false,
+          "live": true,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "3": {
+          "day": 3,
+          "date": "2026-07-08",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "4": {
+          "day": 4,
+          "date": "2026-07-09",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "5": {
+          "day": 5,
+          "date": "2026-07-10",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        }
+      }
+    },
+    {
+      "name": "ridingthewave",
+      "account_id": 24801853,
+      "url": "https://topstepx.com/share/stats?share=24801853",
+      "source": "live",
+      "shared": true,
+      "error": null,
+      "account_size": 150000,
+      "balance": 148905.8,
+      "days_traded": 2,
+      "overall": {
+        "pnl": -2613.64,
+        "return_pct": -1.7424,
+        "trades": 30,
+        "balance": 148905.8
+      },
+      "days": {
+        "1": {
+          "day": 1,
+          "date": "2026-07-06",
+          "traded": true,
+          "live": false,
+          "pnl": -2839.6,
+          "return_pct": -1.8931,
+          "trades": 29,
+          "win_rate": 41.38,
+          "balance": 148679.84
+        },
+        "2": {
+          "day": 2,
+          "date": "2026-07-07",
+          "traded": true,
+          "live": true,
+          "pnl": 225.96,
+          "return_pct": 0.1506,
+          "trades": 1,
+          "win_rate": 100,
+          "balance": 148905.8
+        },
+        "3": {
+          "day": 3,
+          "date": "2026-07-08",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "4": {
+          "day": 4,
+          "date": "2026-07-09",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "5": {
+          "day": 5,
+          "date": "2026-07-10",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        }
+      }
+    }
+  ]
+}

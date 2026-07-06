@@ -1,0 +1,11 @@
+{
+  "name": "algotraderz-bot-challenge",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Weekly bot-trading leaderboard from public TopstepX share links, served as a static GitHub Pages site.",
+  "scripts": {
+    "scrape": "node src/scrape-shares.mjs",
+    "serve": "node src/serve.mjs"
+  }
+}

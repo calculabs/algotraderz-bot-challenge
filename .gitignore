@@ -1,0 +1,10 @@
+node_modules/
+.DS_Store
+.env
+
+# Generated debug output from `npm run scrape` (kept local, not committed).
+data/raw/
+data/diagnostics.json
+
+# data/leaderboard.json and data/leaderboard.csv ARE committed —
+# GitHub Pages serves the JSON as the site's data source.
