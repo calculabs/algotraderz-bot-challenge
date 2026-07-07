@@ -64,13 +64,14 @@ Edit `participants.json` (or use the ⚙ **Manage** button on the page):
 Each competitor is just a **name** (their Discord username) and a public share **url**
 (or `accountId`). Account size, P&L and % return are all pulled from the share.
 
-### Players add themselves (no maintainer needed)
+### Players add themselves (no login, no maintainer)
 
-Competitors don't need repo access. From the site's ⚙ **Manage** panel they enter their
-name + share link and hit **"Add me to the leaderboard"**, which opens a pre-filled GitHub
-issue. The `roster-sync` workflow parses it, writes the entry into `participants.json`,
-commits, and redeploys — automatically, within a minute or two. Editing an issue re-runs it;
-`scripts/apply-roster-issue.mjs` dedupes by name/account id so re-submitting just updates.
+Competitors open the site's ⚙ **Manage** panel, enter their Discord name + share link, and
+hit **"Add me to the leaderboard"** — the entry is written to **Firestore** from the browser
+via anonymous auth (no sign-in, nothing to install). The board reads `participants.json`
+(seed) **merged with** the Firestore roster, so new players show up live. Re-submitting
+updates your own entry in place. `src/firebase.mjs` holds the (public-safe) config + REST
+reader; the Node scrape merges the same Firestore roster into the committed snapshot.
 
 To pin a fixed competition window instead of the live week, add ISO `weekStart` / `weekEnd`
 to `challenge`. Override the account-size tiers with `challenge.accountSizes` if needed.

@@ -222,9 +222,8 @@
     import { fetchWeeklyStats, parseAccountId } from "./src/topstep-api.mjs";
     import { weekSchedule } from "./src/calendar.mjs";
     import { computeMetrics, buildRow, rankByScope, challengeInfo } from "./src/leaderboard.mjs";
+    import { FIREBASE_CONFIG, fetchFirestoreRoster, mergeRoster } from "./src/firebase.mjs";
 
-    const LS_KEY = "botchallenge.config";
-    const REPO = "calculabs/algotraderz-bot-challenge"; // for self-serve roster submissions
     const $ = (id) => document.getElementById(id);
 
     /* ---------- formatting ---------- */
@@ -348,31 +347,23 @@
     }
     const showEmpty = (msg) => { $("app").innerHTML = `<div class="empty">${msg || "No standings yet."}</div>`; };
 
-    /* ---------- config: url ?r= > localStorage > participants.json ---------- */
-    const encodeConfig = (o) => btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(o))));
-    const decodeConfig = (s) => JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(s), (c) => c.charCodeAt(0))));
-
-    function normalizeConfig(raw) {
-      if (!raw) return null;
-      if (Array.isArray(raw)) return { challenge: {}, participants: raw };
-      return { challenge: raw.challenge ?? {}, participants: raw.participants ?? [] };
-    }
-    async function loadConfig() {
-      const u = new URL(location.href);
-      const r = u.searchParams.get("r");
-      if (r) { try { return { cfg: normalizeConfig(decodeConfig(r)), fromUrl: true }; } catch {} }
-      const ls = localStorage.getItem(LS_KEY);
-      if (ls) { try { return { cfg: normalizeConfig(JSON.parse(ls)), fromUrl: false }; } catch {} }
-      try {
-        const res = await fetch("./participants.json", { cache: "no-store" });
-        if (res.ok) return { cfg: normalizeConfig(await res.json()), fromUrl: false };
-      } catch {}
-      return { cfg: null, fromUrl: false };
-    }
-
+    /* ---------- roster: participants.json (seed) + Firestore (self-serve) ---------- */
     let CONFIG = { challenge: {}, participants: [] };
 
-    function persist() { try { localStorage.setItem(LS_KEY, JSON.stringify(CONFIG)); } catch {} }
+    async function loadRoster() {
+      let challenge = {};
+      let base = [];
+      try {
+        const res = await fetch("./participants.json", { cache: "no-store" });
+        if (res.ok) {
+          const j = await res.json();
+          challenge = Array.isArray(j) ? {} : j.challenge ?? {};
+          base = Array.isArray(j) ? j : j.participants ?? [];
+        }
+      } catch {}
+      const extra = await fetchFirestoreRoster();
+      return { challenge, participants: mergeRoster(base, extra) };
+    }
 
     /* ---------- build the board live from config (with snapshot fallback) ---------- */
     async function buildLive(config) {
@@ -402,11 +393,13 @@
 
     async function refresh() {
       try {
+        CONFIG = await loadRoster(); // pick up newly self-added players each cycle
+        if (!CONFIG.participants.length) throw new Error("empty roster");
         DATA = await buildLive(CONFIG);
         draw();
       } catch (e) {
         try { DATA = await (await fetch("./data/leaderboard.json", { cache: "no-store" })).json(); draw(); }
-        catch { showEmpty("Couldn't load standings."); }
+        catch { showEmpty("No standings yet. Add yourself with the ⚙ Manage button."); }
       }
     }
 
@@ -415,20 +408,18 @@
 
     function renderPanel() {
       const ps = CONFIG.participants || [];
-      const ch = CONFIG.challenge || {};
-      const rosterHtml = ps.length ? ps.map((p, i) => {
+      const rosterHtml = ps.length ? ps.map((p) => {
         const id = parseAccountId(p.accountId ?? p.share ?? p.url);
         return `<div class="rrow">
           <span class="rn">${esc(p.name || p.discord || "—")}</span>
-          <span class="rm">${id != null ? "account " + id : "no share link"}</span>
-          <button class="del" data-i="${i}" title="Remove">✕</button>
+          <span class="rm">${id != null ? "account " + id : "no link"}</span>
         </div>`;
-      }).join("") : `<div class="hint">No competitors yet. Add one below.</div>`;
+      }).join("") : `<div class="hint">No one's joined yet — be first.</div>`;
 
       $("panel").innerHTML = `
         <button class="close" id="closeBtn">×</button>
         <h2>Join the leaderboard</h2>
-        <p class="hint">Enter your Discord name + public TopstepX share link, then submit. The board updates automatically in ~1 min — nothing to install. (Submitting opens a quick GitHub form to confirm it's you.)</p>
+        <p class="hint">Enter your Discord name + public TopstepX share link and add yourself — no login, nothing to install. Account size, P&amp;L and % return come straight from your share. Submitting again just updates your link.</p>
 
         <div class="roster">${rosterHtml}</div>
         <div class="divider"></div>
@@ -436,76 +427,65 @@
         <div class="field"><label>Discord username</label><input type="text" id="fName" placeholder="e.g. ridingthewave" /></div>
         <div class="field"><label>TopstepX share link</label><input type="text" id="fLink" placeholder="https://topstepx.com/share/stats?share=24801853" /></div>
         <button class="btn primary" id="submitBtn">Add me to the leaderboard →</button>
-        <button class="btn" id="addBtn" style="width:100%;margin-top:8px;">Preview on this device only</button>
 
         <div class="divider"></div>
-        <details>
-          <summary class="tools-summary">Organizer tools</summary>
-          <div class="grid2" style="margin-top:12px;">
-            <div class="field"><label>Challenge title</label><input type="text" id="fTitle" value="${esc(ch.title || "Bot Challenge")}" /></div>
-            <div class="field"><label>Org</label><input type="text" id="fOrg" value="${esc(ch.org || "Algo Traderz")}" /></div>
-          </div>
-          <div class="btn-row">
-            <button class="btn" id="copyBtn">Copy participants.json</button>
-            <button class="btn" id="shareBtn">Copy preview link</button>
-          </div>
-          <div class="btn-row"><button class="btn" id="resetBtn">Reset to published</button></div>
-        </details>`;
+        <p class="hint" style="margin:0;">Challenge title, rules and the starting roster live in <code>participants.json</code> in the repo — edit there to change them for everyone.</p>`;
 
       $("closeBtn").onclick = closePanel;
       $("submitBtn").onclick = submitToBoard;
-      $("addBtn").onclick = addCompetitor;
-      $("copyBtn").onclick = copyJson;
-      $("shareBtn").onclick = copyShareLink;
-      $("resetBtn").onclick = resetConfig;
-      $("panel").querySelectorAll(".del").forEach((b) => (b.onclick = () => removeCompetitor(+b.dataset.i)));
     }
 
-    // Self-serve: open a pre-filled GitHub issue that the roster-sync Action applies.
-    function submitToBoard() {
+    // Anonymous Firestore write via REST — no login; the browser keeps a stable
+    // anonymous identity so re-submitting updates the same entry.
+    async function firestoreWrite(name, url) {
+      const key = FIREBASE_CONFIG.apiKey;
+      let saved = null;
+      try { saved = JSON.parse(localStorage.getItem("fbAnon") || "null"); } catch {}
+      let idToken, uid;
+      if (saved?.refreshToken) {
+        const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${key}`, {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(saved.refreshToken)}`
+        });
+        if (r.ok) { const j = await r.json(); idToken = j.id_token; uid = j.user_id; }
+      }
+      if (!idToken) {
+        const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${key}`, {
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ returnSecureToken: true })
+        });
+        if (!r.ok) throw new Error("auth failed (" + r.status + ") — is Anonymous sign-in enabled?");
+        const j = await r.json(); idToken = j.idToken; uid = j.localId;
+        try { localStorage.setItem("fbAnon", JSON.stringify({ refreshToken: j.refreshToken, uid })); } catch {}
+      }
+      const docUrl = `https://firestore.googleapis.com/v1/projects/${FIREBASE_CONFIG.projectId}/databases/(default)/documents/roster/${uid}`;
+      const res = await fetch(docUrl, {
+        method: "PATCH",
+        headers: { "content-type": "application/json", authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ fields: { name: { stringValue: name }, url: { stringValue: url }, updatedAt: { timestampValue: new Date().toISOString() } } })
+      });
+      if (!res.ok) throw new Error("write failed (" + res.status + ")");
+    }
+
+    async function submitToBoard() {
       const name = $("fName").value.trim();
-      const link = $("fLink").value.trim();
+      const accountId = parseAccountId($("fLink").value.trim());
       if (!name) { toast("Enter your Discord username"); return; }
-      if (parseAccountId(link) == null) { toast("Enter a valid share link"); return; }
-      const params = new URLSearchParams({ template: "roster.yml", title: `[roster] ${name}`, name, share: link });
-      window.open(`https://github.com/${REPO}/issues/new?${params.toString()}`, "_blank", "noopener");
-      toast("Opening GitHub to confirm…");
+      if (accountId == null) { toast("Enter a valid TopstepX share link"); return; }
+      const btn = $("submitBtn");
+      btn.disabled = true; btn.textContent = "Adding…";
+      try {
+        await firestoreWrite(name, `https://topstepx.com/share/stats?share=${accountId}`);
+        toast("You're on the board 🎉");
+        await refresh();
+        renderPanel();
+      } catch (e) {
+        console.error(e);
+        toast(String(e.message || "Couldn't add you — try again"));
+        btn.disabled = false; btn.textContent = "Add me to the leaderboard →";
+      }
     }
 
-    function readChallengeInputs() {
-      CONFIG.challenge = {
-        ...CONFIG.challenge,
-        title: $("fTitle").value.trim() || "Bot Challenge",
-        org: $("fOrg").value.trim() || "Algo Traderz"
-      };
-    }
-    function addCompetitor() {
-      readChallengeInputs();
-      const name = $("fName").value.trim();
-      const link = $("fLink").value.trim();
-      if (!name) { toast("Enter a Discord username"); return; }
-      if (parseAccountId(link) == null) { toast("Enter a valid share link"); return; }
-      CONFIG.participants = [...(CONFIG.participants || []), { name, url: link }];
-      persist(); renderPanel(); refresh(); toast("Added " + name);
-    }
-    function removeCompetitor(i) { CONFIG.participants.splice(i, 1); persist(); renderPanel(); refresh(); }
-    function resetConfig() {
-      localStorage.removeItem(LS_KEY);
-      history.replaceState(null, "", location.pathname);
-      toast("Reset to published");
-      init();
-    }
-    async function copyJson() {
-      readChallengeInputs(); persist();
-      await navigator.clipboard.writeText(JSON.stringify(CONFIG, null, 2)).catch(() => {});
-      toast("participants.json copied");
-    }
-    async function copyShareLink() {
-      readChallengeInputs(); persist();
-      const url = location.origin + location.pathname + "?r=" + encodeConfig(CONFIG);
-      await navigator.clipboard.writeText(url).catch(() => {});
-      toast("Share link copied");
-    }
     const openPanel = () => { renderPanel(); $("overlay").classList.add("open"); };
     const closePanel = () => $("overlay").classList.remove("open");
 
@@ -515,16 +495,8 @@
     /* ---------- init ---------- */
     let refreshTimer = null;
     async function init() {
-      const { cfg } = await loadConfig();
-      if (!cfg) {
-        // No config anywhere — show the committed snapshot if present.
-        try { DATA = await (await fetch("./data/leaderboard.json", { cache: "no-store" })).json(); draw(); }
-        catch { showEmpty('No standings yet. Add competitors with the ⚙ Manage button, or run <code>npm run scrape</code>.'); }
-        return;
-      }
-      CONFIG = cfg;
-      await refresh();
-      // Keep the current (unfinished) day's P&L in motion.
+      await refresh(); // loads roster (participants.json + Firestore) and builds the board
+      // Keep the current (unfinished) day's P&L — and any new self-added players — in motion.
       if (refreshTimer) clearInterval(refreshTimer);
       refreshTimer = setInterval(refresh, 60000);
     }

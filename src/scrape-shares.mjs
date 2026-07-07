@@ -3,6 +3,7 @@ import path from "path";
 import { fetchAccountStats, parseAccountId } from "./topstep-api.mjs";
 import { weekSchedule } from "./calendar.mjs";
 import { computeMetrics, buildRow, rankByScope, challengeInfo, toCsv } from "./leaderboard.mjs";
+import { fetchFirestoreRoster, mergeRoster } from "./firebase.mjs";
 
 const configPath = process.argv[2] || "participants.json";
 if (!fs.existsSync(configPath)) {
@@ -12,7 +13,9 @@ if (!fs.existsSync(configPath)) {
 
 const raw = JSON.parse(fs.readFileSync(configPath, "utf8"));
 const challenge = Array.isArray(raw) ? {} : raw.challenge ?? {};
-const participants = Array.isArray(raw) ? raw : raw.participants ?? [];
+const seed = Array.isArray(raw) ? raw : raw.participants ?? [];
+// Merge the committed seed roster with self-serve entries from Firestore.
+const participants = mergeRoster(seed, await fetchFirestoreRoster());
 
 const now = new Date();
 // Competition week can be pinned in config; otherwise use the live futures week.
