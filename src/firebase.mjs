@@ -16,16 +16,21 @@ export const FIREBASE_CONFIG = {
 
 const REST = `https://firestore.googleapis.com/v1/projects/${FIREBASE_CONFIG.projectId}/databases/(default)/documents`;
 
-// Read the self-serve roster ([{ name, url }]). Returns [] on any error so the
-// board always degrades gracefully to participants.json.
+// Read the self-serve roster ([{ id, name, url }]). `id` is the Firestore doc id
+// (the author's anonymous uid) — used by the Manage panel to delete an entry.
+// Returns [] on any error so the board degrades gracefully to participants.json.
 export async function fetchFirestoreRoster() {
   try {
     const res = await fetch(`${REST}/roster?pageSize=500`);
     if (!res.ok) return [];
     const data = await res.json();
     return (data.documents || [])
-      .map((d) => ({ name: d.fields?.name?.stringValue, url: d.fields?.url?.stringValue }))
-      .filter((e) => e && e.name && e.url);
+      .map((d) => ({
+        id: String(d.name || "").split("/").pop(),
+        name: d.fields?.name?.stringValue,
+        url: d.fields?.url?.stringValue
+      }))
+      .filter((e) => e.name && e.url);
   } catch {
     return [];
   }

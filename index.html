@@ -405,21 +405,104 @@
 
     /* ---------- manage panel ---------- */
     const toast = (msg) => { const t = $("toast"); t.textContent = msg; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 1600); };
+    const FS = `https://firestore.googleapis.com/v1/projects/${FIREBASE_CONFIG.projectId}/databases/(default)/documents`;
+
+    // Stable anonymous identity per browser (no login). Reuses the stored refresh
+    // token so re-visits keep the same uid → can edit their own entry / stay organizer.
+    async function fbAuth() {
+      const key = FIREBASE_CONFIG.apiKey;
+      let saved = null;
+      try { saved = JSON.parse(localStorage.getItem("fbAnon") || "null"); } catch {}
+      if (saved?.refreshToken) {
+        const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${key}`, {
+          method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(saved.refreshToken)}`
+        });
+        if (r.ok) { const j = await r.json(); return { idToken: j.id_token, uid: j.user_id }; }
+      }
+      const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${key}`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ returnSecureToken: true })
+      });
+      if (!r.ok) throw new Error("auth failed (" + r.status + ") — is Anonymous sign-in enabled?");
+      const j = await r.json();
+      try { localStorage.setItem("fbAnon", JSON.stringify({ refreshToken: j.refreshToken, uid: j.localId })); } catch {}
+      return { idToken: j.idToken, uid: j.localId };
+    }
+
+    const ADMIN = { me: null, owner: "" };
+    const isAdmin = () => !!ADMIN.me && ADMIN.me === ADMIN.owner;
+
+    async function fbOwnerUid() {
+      try { const r = await fetch(`${FS}/admin/owner`); if (!r.ok) return ""; const j = await r.json(); return j.fields?.uid?.stringValue || ""; } catch { return ""; }
+    }
+    async function loadAdmin() {
+      ADMIN.owner = await fbOwnerUid();
+      let saved = null;
+      try { saved = JSON.parse(localStorage.getItem("fbAnon") || "null"); } catch {}
+      // Only resolve an identity for people who've already acted (don't mint anon
+      // users just for opening the panel).
+      if (saved?.refreshToken || saved?.uid) {
+        try { ADMIN.me = (await fbAuth()).uid; } catch { ADMIN.me = saved?.uid || null; }
+      } else {
+        ADMIN.me = null;
+      }
+    }
+
+    async function firestoreWrite(name, url) {
+      const { idToken, uid } = await fbAuth();
+      const res = await fetch(`${FS}/roster/${uid}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json", authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ fields: { name: { stringValue: name }, url: { stringValue: url }, updatedAt: { timestampValue: new Date().toISOString() } } })
+      });
+      if (!res.ok) throw new Error("write failed (" + res.status + ")");
+    }
+
+    async function claimOrganizer() {
+      try {
+        const { idToken, uid } = await fbAuth();
+        const res = await fetch(`${FS}/admin/owner`, {
+          method: "PATCH", headers: { "content-type": "application/json", authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({ fields: { uid: { stringValue: uid } } })
+        });
+        if (!res.ok) { ADMIN.owner = await fbOwnerUid(); toast("Organizer already claimed"); renderPanel(); return; }
+        ADMIN.me = uid; ADMIN.owner = uid; toast("You're the organizer ✓"); renderPanel();
+      } catch (e) { toast(String(e.message || "Couldn't claim")); }
+    }
+
+    async function deleteEntry(id) {
+      try {
+        const { idToken } = await fbAuth();
+        const res = await fetch(`${FS}/roster/${id}`, { method: "DELETE", headers: { authorization: `Bearer ${idToken}` } });
+        if (!res.ok) { toast("Delete failed (" + res.status + ")"); return; }
+        toast("Removed");
+        await refresh(); renderPanel();
+      } catch (e) { toast(String(e.message || "Delete failed")); }
+    }
 
     function renderPanel() {
       const ps = CONFIG.participants || [];
+      const admin = isAdmin();
       const rosterHtml = ps.length ? ps.map((p) => {
-        const id = parseAccountId(p.accountId ?? p.share ?? p.url);
+        const acc = parseAccountId(p.accountId ?? p.share ?? p.url);
+        const canDelete = p.id && (admin || p.id === ADMIN.me);
         return `<div class="rrow">
           <span class="rn">${esc(p.name || p.discord || "—")}</span>
-          <span class="rm">${id != null ? "account " + id : "no link"}</span>
+          <span class="rm">${acc != null ? "account " + acc : "no link"}</span>
+          ${canDelete ? `<button class="del" data-id="${esc(p.id)}" title="Remove">✕</button>` : ""}
         </div>`;
       }).join("") : `<div class="hint">No one's joined yet — be first.</div>`;
+
+      const organizer = admin
+        ? `<p class="hint" style="margin:0;">✓ You're the organizer — remove any entry with the ✕. Title, rules and the seed roster live in <code>participants.json</code>.</p>`
+        : !ADMIN.owner
+        ? `<button class="btn" id="claimBtn" style="width:100%;">Claim organizer role</button><p class="hint" style="margin:8px 0 0;">One-time, from your own device — lets you remove any entry.</p>`
+        : `<p class="hint" style="margin:0;">Title, rules and the seed roster live in <code>participants.json</code> in the repo.</p>`;
 
       $("panel").innerHTML = `
         <button class="close" id="closeBtn">×</button>
         <h2>Join the leaderboard</h2>
-        <p class="hint">Enter your Discord name + public TopstepX share link and add yourself — no login, nothing to install. Account size, P&amp;L and % return come straight from your share. Submitting again just updates your link.</p>
+        <p class="hint">Enter your Discord name + public TopstepX share link and add yourself — no login. Account size, P&amp;L and % return come from your share; submitting again updates your link.</p>
 
         <div class="roster">${rosterHtml}</div>
         <div class="divider"></div>
@@ -429,42 +512,12 @@
         <button class="btn primary" id="submitBtn">Add me to the leaderboard →</button>
 
         <div class="divider"></div>
-        <p class="hint" style="margin:0;">Challenge title, rules and the starting roster live in <code>participants.json</code> in the repo — edit there to change them for everyone.</p>`;
+        ${organizer}`;
 
       $("closeBtn").onclick = closePanel;
       $("submitBtn").onclick = submitToBoard;
-    }
-
-    // Anonymous Firestore write via REST — no login; the browser keeps a stable
-    // anonymous identity so re-submitting updates the same entry.
-    async function firestoreWrite(name, url) {
-      const key = FIREBASE_CONFIG.apiKey;
-      let saved = null;
-      try { saved = JSON.parse(localStorage.getItem("fbAnon") || "null"); } catch {}
-      let idToken, uid;
-      if (saved?.refreshToken) {
-        const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${key}`, {
-          method: "POST",
-          headers: { "content-type": "application/x-www-form-urlencoded" },
-          body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(saved.refreshToken)}`
-        });
-        if (r.ok) { const j = await r.json(); idToken = j.id_token; uid = j.user_id; }
-      }
-      if (!idToken) {
-        const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${key}`, {
-          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ returnSecureToken: true })
-        });
-        if (!r.ok) throw new Error("auth failed (" + r.status + ") — is Anonymous sign-in enabled?");
-        const j = await r.json(); idToken = j.idToken; uid = j.localId;
-        try { localStorage.setItem("fbAnon", JSON.stringify({ refreshToken: j.refreshToken, uid })); } catch {}
-      }
-      const docUrl = `https://firestore.googleapis.com/v1/projects/${FIREBASE_CONFIG.projectId}/databases/(default)/documents/roster/${uid}`;
-      const res = await fetch(docUrl, {
-        method: "PATCH",
-        headers: { "content-type": "application/json", authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ fields: { name: { stringValue: name }, url: { stringValue: url }, updatedAt: { timestampValue: new Date().toISOString() } } })
-      });
-      if (!res.ok) throw new Error("write failed (" + res.status + ")");
+      const claim = $("claimBtn"); if (claim) claim.onclick = claimOrganizer;
+      $("panel").querySelectorAll(".del").forEach((b) => (b.onclick = () => deleteEntry(b.dataset.id)));
     }
 
     async function submitToBoard() {
@@ -477,8 +530,7 @@
       try {
         await firestoreWrite(name, `https://topstepx.com/share/stats?share=${accountId}`);
         toast("You're on the board 🎉");
-        await refresh();
-        renderPanel();
+        await refresh(); renderPanel();
       } catch (e) {
         console.error(e);
         toast(String(e.message || "Couldn't add you — try again"));
@@ -486,7 +538,12 @@
       }
     }
 
-    const openPanel = () => { renderPanel(); $("overlay").classList.add("open"); };
+    async function openPanel() {
+      renderPanel();
+      $("overlay").classList.add("open");
+      await loadAdmin();
+      renderPanel(); // re-render with organizer / delete affordances once resolved
+    }
     const closePanel = () => $("overlay").classList.remove("open");
 
     $("manageBtn").onclick = openPanel;
