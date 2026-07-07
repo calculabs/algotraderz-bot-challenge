@@ -62,6 +62,9 @@
     .scope-pill { border: 1px solid var(--card-border); background: rgba(255,255,255,.04); color: var(--muted); border-radius: 99px; padding: 8px 16px; font-size: 13px; font-weight: 700; letter-spacing: .04em; cursor: pointer; font-family: inherit; }
     .scope-pill:hover { color: #fff; }
     .scope-pill.active { background: linear-gradient(90deg, #ffffff, #dbe4f5); color: #0b1020; border-color: transparent; }
+    .metricbar { display: flex; gap: 6px; justify-content: center; align-items: center; flex-wrap: wrap; margin: 0 auto 12px; }
+    .metriclabel { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; margin-right: 3px; }
+    .scope-pill.mini { padding: 5px 12px; font-size: 12px; letter-spacing: .02em; }
     .daytabs { display: flex; gap: 6px; }
     .daytab { position: relative; width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--card-border); background: rgba(255,255,255,.04); color: var(--muted); font-weight: 800; font-size: 14px; cursor: pointer; display: grid; place-items: center; font-family: inherit; }
     .daytab.past { color: #aeb9c9; }
@@ -72,7 +75,8 @@
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
     .progress-label { text-align: center; color: var(--muted-dim); font-size: 12px; letter-spacing: .22em; text-transform: uppercase; font-weight: 600; margin-bottom: 34px; }
 
-    .podium { display: grid; grid-template-columns: 1fr 1.18fr 1fr; align-items: end; gap: 14px; margin-bottom: 20px; }
+    /* minmax(0,…) locks the column ratio so a long name can't widen its card. */
+    .podium { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.18fr) minmax(0,1fr); align-items: end; gap: 14px; margin-bottom: 20px; }
     .pod {
       position: relative; border: 1px solid var(--card-border);
       background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.012));
@@ -248,7 +252,8 @@
     /* ---------- render (scope-aware: overall or a single day) ---------- */
     const MEDAL = { 1: "gold", 2: "silver", 3: "bronze" };
     let DATA = null;      // full leaderboard object (rich rows + schedule)
-    let SCOPE = "overall"; // "overall" | day number
+    let SCOPE = "overall"; // "overall" | day number — the time window
+    let METRIC = "pct";    // "pct" (% return) | "wpl" (week $) | "today" (today $)
 
     const daysOf = () => (DATA?.schedule?.days || []);
     const dayState = (n) => daysOf().find((d) => d.day === n)?.state;
@@ -277,6 +282,22 @@
     const linked = (inner, url) =>
       url ? `<a class="card-link" href="${esc(url)}" target="_blank" rel="noreferrer">${inner}</a>` : inner;
 
+    // The card leads with whatever we're ranking by (paired with its own %), so the
+    // ordering always reads off the top. Every branch returns three rows; podCard
+    // appends Account for a consistent four-row card.
+    const R = {
+      ret:   (r) => `<div class="row"><span class="k">Return</span><span class="v ${cls(r.return_pct)}">${pct(r.return_pct)}</span></div>`,
+      wRet:  (r) => `<div class="row"><span class="k">Return</span><span class="v ${cls(r.week_return)}">${pct(r.week_return)}</span></div>`,
+      tRet:  (r) => `<div class="row"><span class="k">Return</span><span class="v ${cls(r.today_return)}">${pct(r.today_return)}</span></div>`,
+      week:  (r) => `<div class="row"><span class="k">Weekly P&L</span><span class="v ${cls(r.week_pnl)}">${money(r.week_pnl, { sign: true })}</span></div>`,
+      today: (r) => `<div class="row"><span class="k">Today P&L</span><span class="v ${cls(r.today_pnl)}">${money(r.today_pnl, { sign: true })}</span></div>`
+    };
+    const headRows = (row) => {
+      if (METRIC === "wpl") return R.week(row) + R.wRet(row) + R.today(row);
+      if (METRIC === "today") return R.today(row) + R.tRet(row) + R.week(row);
+      return R.ret(row) + R.week(row) + R.today(row);
+    };
+
     function podCard(row, place) {
       const tone = MEDAL[place];
       const lead = place === 1 ? `<div class="lead-pill">LEADING&nbsp; 🔥 <span class="who">${esc(leadWho())}</span></div>` : "";
@@ -285,22 +306,26 @@
           <div class="avatar ${tone}">${place === 1 ? "🏆" : "🤖"}<span class="badge ${tone}">${place}</span></div>
           <div class="name">${esc(row.name)}</div>
           <div class="rows">
-            <div class="row"><span class="k">Return</span><span class="v ${cls(row.return_pct)}">${pct(row.return_pct)}</span></div>
-            <div class="row"><span class="k">Week</span><span class="v ${cls(row.week_pnl)}">${money(row.week_pnl, { sign: true })}</span></div>
-            <div class="row"><span class="k">Today</span><span class="v ${cls(row.today_pnl)}">${money(row.today_pnl, { sign: true })}</span></div>
+            ${headRows(row)}
             <div class="row"><span class="k">Account</span><span class="v" style="color:var(--muted)">${whole(row.account_size)}</span></div>
           </div>${lead}
         </div>`, row.url);
     }
-    const listItem = (row) => linked(`
+    const listItem = (row) => {
+      const big =
+        METRIC === "wpl" ? `<div class="big ${cls(row.week_pnl)}">${money(row.week_pnl, { sign: true })}</div>`
+        : METRIC === "today" ? `<div class="big ${cls(row.today_pnl)}">${money(row.today_pnl, { sign: true })}</div>`
+        : `<div class="big ${cls(row.return_pct)}">${pct(row.return_pct)}</div>`;
+      return linked(`
       <div class="item">
         <div class="num">${row.rank}</div>
         <div class="who"><span class="nm">${esc(row.name)}</span></div>
         <div class="stat">
-          <div class="big ${cls(row.return_pct)}">${pct(row.return_pct)}</div>
-          <div class="sub">Wk <span class="${cls(row.week_pnl)}">${money(row.week_pnl, { sign: true })}</span> · Today <span class="${cls(row.today_pnl)}">${money(row.today_pnl, { sign: true })}</span></div>
+          ${big}
+          <div class="sub">Weekly P&L <span class="${cls(row.week_pnl)}">${money(row.week_pnl, { sign: true })}</span> · Today P&L <span class="${cls(row.today_pnl)}">${money(row.today_pnl, { sign: true })}</span></div>
         </div>
       </div>`, row.url);
+    };
 
     function tabsHtml() {
       const dayTabs = daysOf().map((d) => {
@@ -308,16 +333,24 @@
         const dot = d.state === "live" ? `<span class="dot"></span>` : "";
         return `<button class="daytab ${d.state}${active}" data-scope="${d.day}"${d.state === "future" ? " disabled" : ""}>${d.day}${dot}</button>`;
       }).join("");
+      const metricBtn = (m, label, title) =>
+        `<button class="scope-pill mini${METRIC === m ? " active" : ""}" data-metric="${m}" title="${title}">${label}</button>`;
       return `<div class="scopebar">
         <button class="scope-pill${SCOPE === "overall" ? " active" : ""}" data-scope="overall">Overall</button>
         <div class="daytabs">${dayTabs}</div>
+      </div>
+      <div class="metricbar">
+        <span class="metriclabel">Rank by</span>
+        ${metricBtn("pct", "% Return", "Percent return on account size")}
+        ${metricBtn("wpl", "Weekly P&L", "Week-to-date P&amp;L ($)")}
+        ${metricBtn("today", "Today P&L", "Today&#39;s P&amp;L ($)")}
       </div>`;
     }
 
     function draw() {
       if (!DATA) return;
       const ch = DATA.challenge || {};
-      const rows = rankByScope(DATA.rows || [], SCOPE, DATA.schedule?.currentDay ?? 0);
+      const rows = rankByScope(DATA.rows || [], SCOPE, DATA.schedule?.currentDay ?? 0, METRIC);
       const podium = rows.slice(0, 3);
       const rest = rows.slice(3);
       const order = [podium[2], podium[0], podium[1]];
@@ -343,6 +376,9 @@
       $("app").querySelectorAll("[data-scope]").forEach((b) => {
         if (b.disabled) return;
         b.onclick = () => { SCOPE = b.dataset.scope === "overall" ? "overall" : Number(b.dataset.scope); draw(); };
+      });
+      $("app").querySelectorAll("[data-metric]").forEach((b) => {
+        b.onclick = () => { METRIC = b.dataset.metric; draw(); };
       });
     }
     const showEmpty = (msg) => { $("app").innerHTML = `<div class="empty">${msg || "No standings yet."}</div>`; };

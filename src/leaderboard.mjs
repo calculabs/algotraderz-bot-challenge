@@ -134,15 +134,21 @@ export function flattenScope(row, scope, currentDay = 0) {
   };
 }
 
-// Highest % return wins; rows with no data sink to the bottom.
-export function rankRows(rows) {
-  rows.sort((a, b) => (b.return_pct ?? -Infinity) - (a.return_pct ?? -Infinity));
+// Rank the rows: highest wins, rows with no data sink to the bottom. `metric`
+// picks the sort key:
+//   "pct"   — % return on account size for the selected day/overall window (default)
+//   "wpl"   — week-to-date dollar P&L
+//   "today" — today's dollar P&L
+const METRIC_KEY = { pct: "return_pct", wpl: "week_pnl", today: "today_pnl" };
+export function rankRows(rows, metric = "pct") {
+  const key = METRIC_KEY[metric] ?? "return_pct";
+  rows.sort((a, b) => (b[key] ?? -Infinity) - (a[key] ?? -Infinity));
   rows.forEach((row, i) => (row.rank = i + 1));
   return rows;
 }
 
-export function rankByScope(rows, scope, currentDay = 0) {
-  return rankRows(rows.map((r) => flattenScope(r, scope, currentDay)));
+export function rankByScope(rows, scope, currentDay = 0, metric = "pct") {
+  return rankRows(rows.map((r) => flattenScope(r, scope, currentDay)), metric);
 }
 
 export function challengeInfo(challenge = {}) {

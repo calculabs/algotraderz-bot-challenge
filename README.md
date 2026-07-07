@@ -8,6 +8,8 @@ static [GitHub Pages](https://pages.github.com/) site.
   Friday 2pm** (5 daily sessions of 3pm → 2pm; the account size is snapped from the balance).
 - **Day navigation:** click any day to see that session's standings; the current, unfinished
   day updates **in motion**. Each card shows **week-to-date** and **today's** P&L.
+- **Rank by:** a toggle switches the ordering between **% return** and **raw $ P&L**, within
+  whatever time window (Overall or a single day) is selected.
 - **Data:** read straight from TopstepX's public JSON API — no login, no browser, no
   password / API key / cookie. Only the numeric account id from a shared stats page is used.
 - **Inputs:** literally just a **share link + name** per competitor. Everything else
