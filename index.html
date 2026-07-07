@@ -181,6 +181,8 @@
     .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
     .btn-row .btn { flex: 1; }
     .divider { height: 1px; background: var(--card-border); margin: 18px 0; }
+    .tools-summary { cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 600; letter-spacing: .02em; }
+    .tools-summary:hover { color: var(--ink); }
     .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 50; background: #162034; border: 1px solid var(--card-border); color: var(--ink); padding: 10px 16px; border-radius: 10px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; }
     .toast.show { opacity: 1; }
 
@@ -222,6 +224,7 @@
     import { computeMetrics, buildRow, rankByScope, challengeInfo } from "./src/leaderboard.mjs";
 
     const LS_KEY = "botchallenge.config";
+    const REPO = "calculabs/algotraderz-bot-challenge"; // for self-serve roster submissions
     const $ = (id) => document.getElementById(id);
 
     /* ---------- formatting ---------- */
@@ -424,34 +427,49 @@
 
       $("panel").innerHTML = `
         <button class="close" id="closeBtn">×</button>
-        <h2>Manage competitors</h2>
-        <p class="hint">Just a Discord username and a public TopstepX share link — account size, P&amp;L and % return are pulled live from the share. Saved to this device and to a shareable link.</p>
+        <h2>Join the leaderboard</h2>
+        <p class="hint">Enter your Discord name + public TopstepX share link, then submit. The board updates automatically in ~1 min — nothing to install. (Submitting opens a quick GitHub form to confirm it's you.)</p>
 
         <div class="roster">${rosterHtml}</div>
         <div class="divider"></div>
 
         <div class="field"><label>Discord username</label><input type="text" id="fName" placeholder="e.g. ridingthewave" /></div>
-        <div class="field"><label>Share link</label><input type="text" id="fLink" placeholder="https://topstepx.com/share/stats?share=24801853" /></div>
-        <button class="btn primary" id="addBtn">Add competitor</button>
+        <div class="field"><label>TopstepX share link</label><input type="text" id="fLink" placeholder="https://topstepx.com/share/stats?share=24801853" /></div>
+        <button class="btn primary" id="submitBtn">Add me to the leaderboard →</button>
+        <button class="btn" id="addBtn" style="width:100%;margin-top:8px;">Preview on this device only</button>
 
         <div class="divider"></div>
-        <div class="grid2">
-          <div class="field"><label>Challenge title</label><input type="text" id="fTitle" value="${esc(ch.title || "Bot Challenge")}" /></div>
-          <div class="field"><label>Org</label><input type="text" id="fOrg" value="${esc(ch.org || "Algo Traderz")}" /></div>
-        </div>
-
-        <div class="btn-row">
-          <button class="btn" id="copyBtn">Copy participants.json</button>
-          <button class="btn" id="shareBtn">Copy share link</button>
-        </div>
-        <div class="btn-row"><button class="btn" id="resetBtn">Reset to published</button></div>`;
+        <details>
+          <summary class="tools-summary">Organizer tools</summary>
+          <div class="grid2" style="margin-top:12px;">
+            <div class="field"><label>Challenge title</label><input type="text" id="fTitle" value="${esc(ch.title || "Bot Challenge")}" /></div>
+            <div class="field"><label>Org</label><input type="text" id="fOrg" value="${esc(ch.org || "Algo Traderz")}" /></div>
+          </div>
+          <div class="btn-row">
+            <button class="btn" id="copyBtn">Copy participants.json</button>
+            <button class="btn" id="shareBtn">Copy preview link</button>
+          </div>
+          <div class="btn-row"><button class="btn" id="resetBtn">Reset to published</button></div>
+        </details>`;
 
       $("closeBtn").onclick = closePanel;
+      $("submitBtn").onclick = submitToBoard;
       $("addBtn").onclick = addCompetitor;
       $("copyBtn").onclick = copyJson;
       $("shareBtn").onclick = copyShareLink;
       $("resetBtn").onclick = resetConfig;
       $("panel").querySelectorAll(".del").forEach((b) => (b.onclick = () => removeCompetitor(+b.dataset.i)));
+    }
+
+    // Self-serve: open a pre-filled GitHub issue that the roster-sync Action applies.
+    function submitToBoard() {
+      const name = $("fName").value.trim();
+      const link = $("fLink").value.trim();
+      if (!name) { toast("Enter your Discord username"); return; }
+      if (parseAccountId(link) == null) { toast("Enter a valid share link"); return; }
+      const params = new URLSearchParams({ template: "roster.yml", title: `[roster] ${name}`, name, share: link });
+      window.open(`https://github.com/${REPO}/issues/new?${params.toString()}`, "_blank", "noopener");
+      toast("Opening GitHub to confirm…");
     }
 
     function readChallengeInputs() {

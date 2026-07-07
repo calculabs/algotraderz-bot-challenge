@@ -64,6 +64,14 @@ Edit `participants.json` (or use the ⚙ **Manage** button on the page):
 Each competitor is just a **name** (their Discord username) and a public share **url**
 (or `accountId`). Account size, P&L and % return are all pulled from the share.
 
+### Players add themselves (no maintainer needed)
+
+Competitors don't need repo access. From the site's ⚙ **Manage** panel they enter their
+name + share link and hit **"Add me to the leaderboard"**, which opens a pre-filled GitHub
+issue. The `roster-sync` workflow parses it, writes the entry into `participants.json`,
+commits, and redeploys — automatically, within a minute or two. Editing an issue re-runs it;
+`scripts/apply-roster-issue.mjs` dedupes by name/account id so re-submitting just updates.
+
 To pin a fixed competition window instead of the live week, add ISO `weekStart` / `weekEnd`
 to `challenge`. Override the account-size tiers with `challenge.accountSizes` if needed.
 

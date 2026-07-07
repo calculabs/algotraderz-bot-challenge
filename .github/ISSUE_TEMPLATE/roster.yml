@@ -1,0 +1,23 @@
+name: Add / update my bot
+description: Join the leaderboard (or swap your share link) — no repo access needed.
+title: "[roster] add my bot"
+labels: ["roster"]
+body:
+  - type: markdown
+    attributes:
+      value: "Submit your Discord name and your **public** TopstepX share link. The leaderboard updates automatically within a minute or two — you don't need to touch any code."
+  - type: input
+    id: name
+    attributes:
+      label: Discord username
+      placeholder: ridingthewave
+    validations:
+      required: true
+  - type: input
+    id: share
+    attributes:
+      label: TopstepX share link (or account ID)
+      description: On TopstepX, open your stats page and copy the Share link.
+      placeholder: https://topstepx.com/share/stats?share=24801853
+    validations:
+      required: true
