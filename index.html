@@ -322,16 +322,18 @@
       return R.ret(row) + R.week(row) + R.today(row);
     };
 
-    // Drawdown cushion: a bar + "$X to limit", or a BREACHED tag once the latest
-    // end-of-day balance sits below the trailing max-loss threshold.
+    // Drawdown cushion: a bar + "$X to limit", or a BREACHED tag (with the day it
+    // breached) once intraday equity has touched the trailing max-loss line.
     // Cushion proximity bucket + whole-dollar format, shared by the bar and the note.
     const ddTone = (dd) => { const f = dd.cushion / dd.mll; return f >= 0.5 ? "safe" : f >= 0.2 ? "warn" : "danger"; };
     const dollars0 = (n) => "$" + Math.round(n).toLocaleString();
+    // Day of week the account breached, e.g. "Monday" (blank if unknown).
+    const ddDay = (dd) => (dd && dd.breach_date ? new Date(dd.breach_date + "T12:00:00Z").toLocaleDateString(undefined, { weekday: "long" }) : "");
 
     function ddHtml(dd) {
       if (!dd) return "";
       if (dd.breached) {
-        const when = dd.breach_date ? " · " + new Date(dd.breach_date + "T12:00:00Z").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+        const when = ddDay(dd) ? " · " + ddDay(dd) : "";
         return `<div class="dd"><div class="dd-tag">⚠ BREACHED${when}</div></div>`;
       }
       if (dd.cushion == null) return "";
@@ -367,7 +369,7 @@
         METRIC === "wpl" ? `<div class="big ${cls(row.week_pnl)}">${money(row.week_pnl, { sign: true })}</div>`
         : METRIC === "today" ? `<div class="big ${cls(row.today_pnl)}">${money(row.today_pnl, { sign: true })}</div>`
         : `<div class="big ${cls(row.return_pct)}">${pct(row.return_pct)}</div>`;
-      const tag = breached ? `<span class="tag">BREACHED</span>` : "";
+      const tag = breached ? `<span class="tag">BREACHED${ddDay(row.drawdown) ? " · " + ddDay(row.drawdown) : ""}</span>` : "";
       return linked(`
       <div class="item${breached ? " elim" : ""}">
         <div class="num">${row.rank}</div>
