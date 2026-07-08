@@ -32,6 +32,43 @@ const pctOf = (pnl, size) => (size ? round4((pnl / size) * 100) : null);
 // are large, so we always rank on net P&L.
 const netPnl = (r) => toNum(r.totalPnL) - toNum(r.totalFees) - toNum(r.totalCommissions);
 
+// Topstep End-of-Day trailing Maximum Loss Limit, by account size.
+export const MLL_BY_SIZE = { 50000: 2000, 100000: 3000, 150000: 4500 };
+
+// End-of-day trailing drawdown. The loss limit trails the highest END-OF-DAY
+// balance (never intraday) by the account's MLL, and locks at the starting balance
+// once the account is up by the MLL. A breach is PERMANENT: the first day that
+// closes below the threshold fails the account for good. It may keep trading after
+// (a breached account effectively becomes a practice account) but is never "active"
+// again, so a later recovery back above the threshold does NOT clear the breach.
+// `cushion` is the room left before the threshold (only meaningful while un-breached).
+// Returns { mll, threshold, balance, cushion, breached, breach_date } or null when
+// the account size has no known MLL.
+export function drawdownState(dailyRows = [], accountSize) {
+  const mll = MLL_BY_SIZE[accountSize];
+  if (!mll || !accountSize) return null;
+  const start = accountSize;
+  const rows = dailyRows
+    .filter((r) => r && r.tradeDay && toNum(r.balance) > 0)
+    .sort((a, b) => String(a.tradeDay).localeCompare(String(b.tradeDay)));
+  let peak = start;
+  let threshold = start - mll;
+  let breached = false;
+  let breachDate = null;
+  for (const r of rows) {
+    const bal = toNum(r.balance);
+    peak = Math.max(peak, bal);
+    threshold = Math.min(start, peak - mll); // trails up on new EOD highs, locks at start
+    if (!breached && bal < threshold - 0.005) {
+      breached = true;
+      breachDate = String(r.tradeDay).slice(0, 10);
+    }
+  }
+  const balance = rows.length ? round2(toNum(rows[rows.length - 1].balance)) : null;
+  const cushion = balance == null ? null : round2(balance - threshold);
+  return { mll, threshold: round2(threshold), balance, cushion, breached, breach_date: breachDate };
+}
+
 // todaystats may arrive as [] , [ {...} ] or {...}; pull the live current-day P&L.
 function normalizeToday(t) {
   const row = Array.isArray(t) ? t[0] : t && typeof t === "object" ? t : null;
@@ -84,6 +121,7 @@ export function computeMetrics(stats, weekDays = [], { currentDay = 0 } = {}) {
     account_size: accountSize,
     balance: latestBalance,
     days_traded: daysTraded,
+    drawdown: drawdownState(daily, accountSize),
     overall: {
       pnl: overallPnl,
       return_pct: pctOf(overallPnl, accountSize),
@@ -106,6 +144,7 @@ export function buildRow(participant, accountId, metrics, { source, shared = nul
     account_size: metrics.account_size ?? null,
     balance: metrics.balance ?? null,
     days_traded: metrics.days_traded ?? 0,
+    drawdown: metrics.drawdown ?? null,
     overall: metrics.overall ?? { pnl: 0, return_pct: null, trades: 0, balance: null },
     days: metrics.days ?? {}
   };
@@ -124,6 +163,7 @@ export function flattenScope(row, scope, currentDay = 0) {
     url: row.url,
     account_size: row.account_size,
     source: row.source,
+    drawdown: row.drawdown ?? null,
     pnl: scopeM ? scopeM.pnl : zero,
     return_pct: scopeM ? scopeM.return_pct : zero,
     traded: scopeM ? scopeM.traded ?? true : false,
@@ -139,10 +179,13 @@ export function flattenScope(row, scope, currentDay = 0) {
 //   "pct"   — % return on account size for the selected day/overall window (default)
 //   "wpl"   — week-to-date dollar P&L
 //   "today" — today's dollar P&L
+// Breached accounts are out of the competition (they become practice accounts), so
+// they always sort below every active account, ordered among themselves by metric.
 const METRIC_KEY = { pct: "return_pct", wpl: "week_pnl", today: "today_pnl" };
 export function rankRows(rows, metric = "pct") {
   const key = METRIC_KEY[metric] ?? "return_pct";
-  rows.sort((a, b) => (b[key] ?? -Infinity) - (a[key] ?? -Infinity));
+  const out = (r) => (r.drawdown?.breached ? 1 : 0);
+  rows.sort((a, b) => out(a) - out(b) || (b[key] ?? -Infinity) - (a[key] ?? -Infinity));
   rows.forEach((row, i) => (row.rank = i + 1));
   return rows;
 }

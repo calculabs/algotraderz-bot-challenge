@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { fetchAccountStats, parseAccountId } from "./topstep-api.mjs";
-import { weekSchedule } from "./calendar.mjs";
+import { resolveWeek } from "./calendar.mjs";
 import { computeMetrics, buildRow, rankByScope, challengeInfo, toCsv } from "./leaderboard.mjs";
 import { fetchFirestoreRoster, mergeRoster } from "./firebase.mjs";
 
@@ -19,11 +19,7 @@ const participants = mergeRoster(seed, await fetchFirestoreRoster());
 
 const now = new Date();
 // Competition week can be pinned in config; otherwise use the live futures week.
-const schedule =
-  challenge.weekStart && challenge.weekEnd
-    ? { ...weekSchedule(now), weekStart: challenge.weekStart, weekEnd: challenge.weekEnd }
-    : weekSchedule(now);
-const range = { start: schedule.weekStart, end: schedule.weekEnd };
+const { schedule, range } = resolveWeek(challenge, now);
 
 fs.mkdirSync("data", { recursive: true });
 const rawDir = path.join("data", "raw");

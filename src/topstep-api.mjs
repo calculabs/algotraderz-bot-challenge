@@ -53,7 +53,12 @@ export async function checkSharing(accountId) {
   }
 }
 
-const dailyBody = (id, range) => ({ tradingAccountId: id, startTradeDay: range.start, endTradeDay: range.end });
+// The trailing drawdown threshold trails the highest END-OF-DAY balance over the
+// account's whole life (the peak often predates the competition week), so `daily`
+// is fetched from inception. Week-scoped scoring filters this by trade date, so a
+// wider window changes nothing about the standings.
+const LIFETIME_START = "2019-01-01T00:00:00.000Z";
+const dailyBody = (id, range) => ({ tradingAccountId: id, startTradeDay: LIFETIME_START, endTradeDay: range.end });
 const accountNameOf = (id) => call(`/Statistics/getAccountName?tradingAccountId=${id}`).catch(() => null);
 const todayStatsOf = (id) => call(`/Statistics/todaystats?accountId=${id}`, { method: "POST", body: {} }).catch(() => null);
 

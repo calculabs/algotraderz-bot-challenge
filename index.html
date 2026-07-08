@@ -143,6 +143,19 @@
     .item.elim { opacity: .62; }
     .item.elim .num { background: rgba(247,112,102,.10); color: var(--red); font-size: 18px; }
 
+    /* drawdown cushion — room to the trailing end-of-day max-loss limit */
+    .dd { margin-top: 12px; }
+    .dd-bar { height: 5px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; }
+    .dd-bar > span { display: block; height: 100%; border-radius: 99px; background: var(--green); transition: width .4s ease; }
+    .dd.warn .dd-bar > span { background: var(--gold); }
+    .dd.danger .dd-bar > span { background: var(--red); }
+    .dd-label { margin-top: 5px; font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+    .dd.warn .dd-label { color: #e7c98a; }
+    .dd.danger .dd-label { color: #e79a92; }
+    .dd-tag { color: var(--red); font-weight: 800; font-size: 11px; letter-spacing: .1em; }
+    .pod.breached { border-color: rgba(247,112,102,.5); background: linear-gradient(180deg, rgba(247,112,102,.09), rgba(247,112,102,.015)); }
+    .cu-warn { color: var(--gold); } .cu-danger { color: #e79a92; }
+
     .rules { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin: 34px 0 22px; }
     .chip { border: 1px solid var(--card-border); background: rgba(255,255,255,.03); color: #9fb0c6; border-radius: 99px; padding: 11px 18px; font-size: 14px; font-weight: 600; }
     .chip.warn { border-color: rgba(247,112,102,.28); color: #e79a92; }
@@ -206,6 +219,7 @@
       .pod .row .k { font-size: 8.5px; letter-spacing: .07em; }
       .pod .row .v { font-size: 13px; }
       .lead-pill { font-size: 10px; padding: 7px 4px; margin-top: 10px; letter-spacing: 0; }
+      .dd { margin-top: 9px; } .dd-label { font-size: 9px; letter-spacing: .02em; } .dd-tag { font-size: 9.5px; }
       .item { padding: 15px 16px; gap: 12px; }
       .item .who .nm { font-size: 16px; }
       .item .stat .big { font-size: 18px; }
@@ -224,7 +238,7 @@
 
   <script type="module">
     import { fetchWeeklyStats, parseAccountId } from "./src/topstep-api.mjs";
-    import { weekSchedule } from "./src/calendar.mjs";
+    import { resolveWeek } from "./src/calendar.mjs";
     import { computeMetrics, buildRow, rankByScope, challengeInfo } from "./src/leaderboard.mjs";
     import { FIREBASE_CONFIG, fetchFirestoreRoster, mergeRoster } from "./src/firebase.mjs";
 
@@ -298,31 +312,59 @@
       return R.ret(row) + R.week(row) + R.today(row);
     };
 
+    // Drawdown cushion: a bar + "$X to limit", or a BREACHED tag once the latest
+    // end-of-day balance sits below the trailing max-loss threshold.
+    // Cushion proximity bucket + whole-dollar format, shared by the bar and the note.
+    const ddTone = (dd) => { const f = dd.cushion / dd.mll; return f >= 0.5 ? "safe" : f >= 0.2 ? "warn" : "danger"; };
+    const dollars0 = (n) => "$" + Math.round(n).toLocaleString();
+
+    function ddHtml(dd) {
+      if (!dd) return "";
+      if (dd.breached) {
+        const when = dd.breach_date ? " · " + new Date(dd.breach_date + "T12:00:00Z").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+        return `<div class="dd"><div class="dd-tag">⚠ BREACHED${when}</div></div>`;
+      }
+      if (dd.cushion == null) return "";
+      const frac = Math.max(0, Math.min(1, dd.cushion / dd.mll));
+      return `<div class="dd ${ddTone(dd)}">
+            <div class="dd-bar"><span style="width:${(frac * 100).toFixed(0)}%"></span></div>
+            <div class="dd-label">${dollars0(dd.cushion)} to limit</div>
+          </div>`;
+    }
+    // Compact cushion note for the list sub-line (only tinted once it gets tight).
+    function ddCushionSub(dd) {
+      if (!dd || dd.cushion == null || dd.breached) return "";
+      const c = { safe: "", warn: "cu-warn", danger: "cu-danger" }[ddTone(dd)];
+      return ` · <span class="${c}">${dollars0(dd.cushion)} left</span>`;
+    }
+
     function podCard(row, place) {
       const tone = MEDAL[place];
       const lead = place === 1 ? `<div class="lead-pill">LEADING&nbsp; 🔥 <span class="who">${esc(leadWho())}</span></div>` : "";
       return linked(`
-        <div class="pod pod-${place}">
+        <div class="pod pod-${place}${row.drawdown?.breached ? " breached" : ""}">
           <div class="avatar ${tone}">${place === 1 ? "🏆" : "🤖"}<span class="badge ${tone}">${place}</span></div>
           <div class="name">${esc(row.name)}</div>
           <div class="rows">
             ${headRows(row)}
             <div class="row"><span class="k">Account</span><span class="v" style="color:var(--muted)">${whole(row.account_size)}</span></div>
-          </div>${lead}
+          </div>${ddHtml(row.drawdown)}${lead}
         </div>`, row.url);
     }
     const listItem = (row) => {
+      const breached = !!row.drawdown?.breached;
       const big =
         METRIC === "wpl" ? `<div class="big ${cls(row.week_pnl)}">${money(row.week_pnl, { sign: true })}</div>`
         : METRIC === "today" ? `<div class="big ${cls(row.today_pnl)}">${money(row.today_pnl, { sign: true })}</div>`
         : `<div class="big ${cls(row.return_pct)}">${pct(row.return_pct)}</div>`;
+      const tag = breached ? `<span class="tag">BREACHED</span>` : "";
       return linked(`
-      <div class="item">
+      <div class="item${breached ? " elim" : ""}">
         <div class="num">${row.rank}</div>
-        <div class="who"><span class="nm">${esc(row.name)}</span></div>
+        <div class="who"><span class="nm">${esc(row.name)}</span>${tag}</div>
         <div class="stat">
           ${big}
-          <div class="sub">Weekly P&L <span class="${cls(row.week_pnl)}">${money(row.week_pnl, { sign: true })}</span> · Today P&L <span class="${cls(row.today_pnl)}">${money(row.today_pnl, { sign: true })}</span></div>
+          <div class="sub">Weekly P&L <span class="${cls(row.week_pnl)}">${money(row.week_pnl, { sign: true })}</span> · Today P&L <span class="${cls(row.today_pnl)}">${money(row.today_pnl, { sign: true })}</span>${ddCushionSub(row.drawdown)}</div>
         </div>
       </div>`, row.url);
     };
@@ -404,10 +446,7 @@
     /* ---------- build the board live from config (with snapshot fallback) ---------- */
     async function buildLive(config) {
       const ch = config.challenge || {};
-      const schedule = ch.weekStart && ch.weekEnd
-        ? { ...weekSchedule(), weekStart: ch.weekStart, weekEnd: ch.weekEnd }
-        : weekSchedule();
-      const range = { start: schedule.weekStart, end: schedule.weekEnd };
+      const { schedule, range } = resolveWeek(ch);
       const rows = (await Promise.all((config.participants || []).map(async (p) => {
         const accountId = parseAccountId(p.accountId ?? p.share ?? p.url);
         if (accountId == null) return null;

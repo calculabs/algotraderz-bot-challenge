@@ -82,3 +82,15 @@ export function weekSchedule(now = new Date()) {
     days
   };
 }
+
+// Resolve the active competition week — the live futures week, or a fixed window
+// pinned via challenge.weekStart / challenge.weekEnd. Returns { schedule, range }.
+// Shared by the Node scrape and the in-browser board so they can't drift.
+export function resolveWeek(challenge = {}, now = new Date()) {
+  const base = weekSchedule(now);
+  const schedule =
+    challenge.weekStart && challenge.weekEnd
+      ? { ...base, weekStart: challenge.weekStart, weekEnd: challenge.weekEnd }
+      : base;
+  return { schedule, range: { start: schedule.weekStart, end: schedule.weekEnd } };
+}

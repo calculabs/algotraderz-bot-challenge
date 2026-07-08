@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-07-07T00:21:55.530Z",
+  "generated_at": "2026-07-08T16:54:59.746Z",
   "week": {
-    "start": "2026-07-05T22:00:00.530Z",
-    "end": "2026-07-12T22:00:00.530Z"
+    "start": "2026-07-05T22:00:00.746Z",
+    "end": "2026-07-12T22:00:00.746Z"
   },
   "schedule": {
-    "currentDay": 2,
+    "currentDay": 3,
     "totalDays": 5,
     "phase": "active",
     "days": [
@@ -17,12 +17,12 @@
       {
         "day": 2,
         "date": "2026-07-07",
-        "state": "live"
+        "state": "past"
       },
       {
         "day": 3,
         "date": "2026-07-08",
-        "state": "future"
+        "state": "live"
       },
       {
         "day": 4,
@@ -54,13 +54,21 @@
       "shared": true,
       "error": null,
       "account_size": 150000,
-      "balance": 150227.6,
-      "days_traded": 1,
+      "balance": 149576.87,
+      "days_traded": 3,
+      "drawdown": {
+        "mll": 4500,
+        "threshold": 145732.68,
+        "balance": 149576.87,
+        "cushion": 3844.19,
+        "breached": false,
+        "breach_date": null
+      },
       "overall": {
-        "pnl": -5.08,
-        "return_pct": -0.0034,
-        "trades": 14,
-        "balance": 150227.6
+        "pnl": -655.81,
+        "return_pct": -0.4372,
+        "trades": 148,
+        "balance": 149576.87
       },
       "days": {
         "1": {
@@ -77,24 +85,24 @@
         "2": {
           "day": 2,
           "date": "2026-07-07",
-          "traded": false,
-          "live": true,
-          "pnl": 0,
-          "return_pct": 0,
-          "trades": 0,
-          "win_rate": null,
-          "balance": null
+          "traded": true,
+          "live": false,
+          "pnl": -47.22,
+          "return_pct": -0.0315,
+          "trades": 26,
+          "win_rate": 50,
+          "balance": 150180.38
         },
         "3": {
           "day": 3,
           "date": "2026-07-08",
-          "traded": false,
-          "live": false,
-          "pnl": 0,
-          "return_pct": 0,
-          "trades": 0,
-          "win_rate": null,
-          "balance": null
+          "traded": true,
+          "live": true,
+          "pnl": -603.51,
+          "return_pct": -0.4023,
+          "trades": 108,
+          "win_rate": 43.52,
+          "balance": 149576.87
         },
         "4": {
           "day": 4,
@@ -128,13 +136,21 @@
       "shared": true,
       "error": null,
       "account_size": 100000,
-      "balance": null,
-      "days_traded": 0,
+      "balance": 100563.54,
+      "days_traded": 2,
+      "drawdown": {
+        "mll": 3000,
+        "threshold": 97563.54,
+        "balance": 100563.54,
+        "cushion": 3000,
+        "breached": false,
+        "breach_date": null
+      },
       "overall": {
-        "pnl": 0,
-        "return_pct": 0,
-        "trades": 0,
-        "balance": null
+        "pnl": 563.54,
+        "return_pct": 0.5635,
+        "trades": 7,
+        "balance": 100563.54
       },
       "days": {
         "1": {
@@ -151,24 +167,24 @@
         "2": {
           "day": 2,
           "date": "2026-07-07",
-          "traded": false,
-          "live": true,
-          "pnl": 0,
-          "return_pct": 0,
-          "trades": 0,
-          "win_rate": null,
-          "balance": null
+          "traded": true,
+          "live": false,
+          "pnl": 228.66,
+          "return_pct": 0.2287,
+          "trades": 3,
+          "win_rate": 33.33,
+          "balance": 100228.66
         },
         "3": {
           "day": 3,
           "date": "2026-07-08",
-          "traded": false,
-          "live": false,
-          "pnl": 0,
-          "return_pct": 0,
-          "trades": 0,
-          "win_rate": null,
-          "balance": null
+          "traded": true,
+          "live": true,
+          "pnl": 334.88,
+          "return_pct": 0.3349,
+          "trades": 4,
+          "win_rate": 50,
+          "balance": 100563.54
         },
         "4": {
           "day": 4,
@@ -202,13 +218,21 @@
       "shared": true,
       "error": null,
       "account_size": 150000,
-      "balance": 150757.24,
-      "days_traded": 1,
+      "balance": 152065.92,
+      "days_traded": 3,
+      "drawdown": {
+        "mll": 4500,
+        "threshold": 147565.92,
+        "balance": 152065.92,
+        "cushion": 4500,
+        "breached": false,
+        "breach_date": null
+      },
       "overall": {
-        "pnl": 757.24,
-        "return_pct": 0.5048,
-        "trades": 4,
-        "balance": 150757.24
+        "pnl": 2065.92,
+        "return_pct": 1.3773,
+        "trades": 9,
+        "balance": 152065.92
       },
       "days": {
         "1": {
@@ -225,24 +249,24 @@
         "2": {
           "day": 2,
           "date": "2026-07-07",
-          "traded": false,
-          "live": true,
-          "pnl": 0,
-          "return_pct": 0,
-          "trades": 0,
-          "win_rate": null,
-          "balance": null
+          "traded": true,
+          "live": false,
+          "pnl": -186.6,
+          "return_pct": -0.1244,
+          "trades": 1,
+          "win_rate": 0,
+          "balance": 150570.64
         },
         "3": {
           "day": 3,
           "date": "2026-07-08",
-          "traded": false,
-          "live": false,
-          "pnl": 0,
-          "return_pct": 0,
-          "trades": 0,
-          "win_rate": null,
-          "balance": null
+          "traded": true,
+          "live": true,
+          "pnl": 1495.28,
+          "return_pct": 0.9969,
+          "trades": 4,
+          "win_rate": 50,
+          "balance": 152065.92
         },
         "4": {
           "day": 4,
@@ -276,13 +300,21 @@
       "shared": true,
       "error": null,
       "account_size": 150000,
-      "balance": 191858.48,
-      "days_traded": 2,
+      "balance": 191692.38,
+      "days_traded": 3,
+      "drawdown": {
+        "mll": 4500,
+        "threshold": 150000,
+        "balance": 191692.38,
+        "cushion": 41692.38,
+        "breached": false,
+        "breach_date": null
+      },
       "overall": {
-        "pnl": 3958.2,
-        "return_pct": 2.6388,
-        "trades": 238,
-        "balance": 191858.48
+        "pnl": 3792.1,
+        "return_pct": 2.5281,
+        "trades": 482,
+        "balance": 191692.38
       },
       "days": {
         "1": {
@@ -300,23 +332,23 @@
           "day": 2,
           "date": "2026-07-07",
           "traded": true,
-          "live": true,
-          "pnl": -42.9,
-          "return_pct": -0.0286,
-          "trades": 4,
-          "win_rate": 50,
-          "balance": 191858.48
+          "live": false,
+          "pnl": -6501,
+          "return_pct": -4.334,
+          "trades": 100,
+          "win_rate": 53,
+          "balance": 185400.38
         },
         "3": {
           "day": 3,
           "date": "2026-07-08",
-          "traded": false,
-          "live": false,
-          "pnl": 0,
-          "return_pct": 0,
-          "trades": 0,
-          "win_rate": null,
-          "balance": null
+          "traded": true,
+          "live": true,
+          "pnl": 6292,
+          "return_pct": 4.1947,
+          "trades": 148,
+          "win_rate": 57.43,
+          "balance": 191692.38
         },
         "4": {
           "day": 4,
@@ -350,13 +382,21 @@
       "shared": true,
       "error": null,
       "account_size": 50000,
-      "balance": 46449.4,
-      "days_traded": 2,
+      "balance": 49497.82,
+      "days_traded": 3,
+      "drawdown": {
+        "mll": 2000,
+        "threshold": 48000,
+        "balance": 49497.82,
+        "cushion": 1497.82,
+        "breached": true,
+        "breach_date": "2026-07-06"
+      },
       "overall": {
-        "pnl": -3550.6,
-        "return_pct": -7.1012,
-        "trades": 59,
-        "balance": 46449.4
+        "pnl": -502.18,
+        "return_pct": -1.0044,
+        "trades": 133,
+        "balance": 49497.82
       },
       "days": {
         "1": {
@@ -374,23 +414,23 @@
           "day": 2,
           "date": "2026-07-07",
           "traded": true,
-          "live": true,
-          "pnl": -1497.24,
-          "return_pct": -2.9945,
-          "trades": 30,
-          "win_rate": 26.67,
-          "balance": 46449.4
+          "live": false,
+          "pnl": 1722.56,
+          "return_pct": 3.4451,
+          "trades": 38,
+          "win_rate": 34.21,
+          "balance": 49669.2
         },
         "3": {
           "day": 3,
           "date": "2026-07-08",
-          "traded": false,
-          "live": false,
-          "pnl": 0,
-          "return_pct": 0,
-          "trades": 0,
-          "win_rate": null,
-          "balance": null
+          "traded": true,
+          "live": true,
+          "pnl": -171.38,
+          "return_pct": -0.3428,
+          "trades": 66,
+          "win_rate": 16.67,
+          "balance": 49497.82
         },
         "4": {
           "day": 4,
@@ -424,13 +464,21 @@
       "shared": true,
       "error": null,
       "account_size": 50000,
-      "balance": 50766.58,
-      "days_traded": 1,
+      "balance": 49567.5,
+      "days_traded": 3,
+      "drawdown": {
+        "mll": 2000,
+        "threshold": 49651.62,
+        "balance": 49567.5,
+        "cushion": -84.12,
+        "breached": true,
+        "breach_date": "2026-07-08"
+      },
       "overall": {
-        "pnl": -885.04,
-        "return_pct": -1.7701,
-        "trades": 9,
-        "balance": 50766.58
+        "pnl": -2084.12,
+        "return_pct": -4.1682,
+        "trades": 53,
+        "balance": 49567.5
       },
       "days": {
         "1": {
@@ -447,24 +495,24 @@
         "2": {
           "day": 2,
           "date": "2026-07-07",
-          "traded": false,
-          "live": true,
-          "pnl": 0,
-          "return_pct": 0,
-          "trades": 0,
-          "win_rate": null,
-          "balance": null
+          "traded": true,
+          "live": false,
+          "pnl": -859.34,
+          "return_pct": -1.7187,
+          "trades": 14,
+          "win_rate": 35.71,
+          "balance": 49907.24
         },
         "3": {
           "day": 3,
           "date": "2026-07-08",
-          "traded": false,
-          "live": false,
-          "pnl": 0,
-          "return_pct": 0,
-          "trades": 0,
-          "win_rate": null,
-          "balance": null
+          "traded": true,
+          "live": true,
+          "pnl": -339.74,
+          "return_pct": -0.6795,
+          "trades": 30,
+          "win_rate": 20,
+          "balance": 49567.5
         },
         "4": {
           "day": 4,
@@ -498,13 +546,21 @@
       "shared": true,
       "error": null,
       "account_size": 150000,
-      "balance": 149103.76,
-      "days_traded": 2,
+      "balance": 152202.72,
+      "days_traded": 3,
+      "drawdown": {
+        "mll": 4500,
+        "threshold": 147702.72,
+        "balance": 152202.72,
+        "cushion": 4500,
+        "breached": false,
+        "breach_date": null
+      },
       "overall": {
-        "pnl": -2415.68,
-        "return_pct": -1.6105,
-        "trades": 31,
-        "balance": 149103.76
+        "pnl": 683.28,
+        "return_pct": 0.4555,
+        "trades": 90,
+        "balance": 152202.72
       },
       "days": {
         "1": {
@@ -522,23 +578,23 @@
           "day": 2,
           "date": "2026-07-07",
           "traded": true,
-          "live": true,
-          "pnl": 423.92,
-          "return_pct": 0.2826,
-          "trades": 2,
-          "win_rate": 100,
-          "balance": 149103.76
+          "live": false,
+          "pnl": 1846.2,
+          "return_pct": 1.2308,
+          "trades": 35,
+          "win_rate": 51.43,
+          "balance": 150526.04
         },
         "3": {
           "day": 3,
           "date": "2026-07-08",
-          "traded": false,
-          "live": false,
-          "pnl": 0,
-          "return_pct": 0,
-          "trades": 0,
-          "win_rate": null,
-          "balance": null
+          "traded": true,
+          "live": true,
+          "pnl": 1676.68,
+          "return_pct": 1.1178,
+          "trades": 26,
+          "win_rate": 57.69,
+          "balance": 152202.72
         },
         "4": {
           "day": 4,
