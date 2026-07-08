@@ -257,7 +257,12 @@
       if (v === 0) return "$" + abs;
       return (v > 0 ? (sign ? "+" : "") : "-") + "$" + abs;
     };
-    const whole = (n) => (Number.isFinite(Number(n)) ? "$" + Number(n).toLocaleString() : "—");
+    // Abbreviated account size: 150000 -> "$150k", 175000 -> "$175.5k".
+    const sizeShort = (n) => {
+      if (!Number.isFinite(Number(n))) return "—";
+      const v = Number(n);
+      return v >= 1000 ? "$" + +(v / 1000).toFixed(1) + "k" : "$" + v.toLocaleString();
+    };
     const pct = (n) => {
       if (n == null || !Number.isFinite(Number(n))) return "—";
       const v = Number(n);
@@ -352,7 +357,7 @@
           <div class="name">${esc(row.name)}</div>
           <div class="rows">
             ${headRows(row)}
-            <div class="row"><span class="k">Account</span><span class="v" style="color:var(--muted)">${whole(row.account_size)}</span></div>
+            <div class="row"><span class="k">Account</span><span class="v" style="color:var(--muted)">${sizeShort(row.account_size)}</span></div>
           </div>${ddHtml(row.drawdown)}${lead}
         </div>`, row.url);
     }
@@ -368,7 +373,7 @@
         <div class="num">${row.rank}</div>
         <div class="main">
           <div class="who"><span class="nm">${esc(row.name)}</span>${tag}</div>
-          <div class="sub">Weekly P&L <span class="${cls(row.week_pnl)}">${money(row.week_pnl, { sign: true })}</span> · Today P&L <span class="${cls(row.today_pnl)}">${money(row.today_pnl, { sign: true })}</span>${ddCushionSub(row.drawdown)}</div>
+          <div class="sub">Wk <span class="${cls(row.week_pnl)}">${money(row.week_pnl, { sign: true })}</span> · Today <span class="${cls(row.today_pnl)}">${money(row.today_pnl, { sign: true })}</span>${ddCushionSub(row.drawdown)}</div>
         </div>
         ${big}
       </div>`, row.url);
