@@ -32,41 +32,60 @@ const pctOf = (pnl, size) => (size ? round4((pnl / size) * 100) : null);
 // are large, so we always rank on net P&L.
 const netPnl = (r) => toNum(r.totalPnL) - toNum(r.totalFees) - toNum(r.totalCommissions);
 
-// Topstep End-of-Day trailing Maximum Loss Limit, by account size.
+// Topstep Maximum Loss Limit (the trailing max-loss "drawdown"), by account size.
 export const MLL_BY_SIZE = { 50000: 2000, 100000: 3000, 150000: 4500 };
 
-// End-of-day trailing drawdown. The loss limit trails the highest END-OF-DAY
-// balance (never intraday) by the account's MLL, and locks at the starting balance
-// once the account is up by the MLL. A breach is PERMANENT: the first day that
-// closes below the threshold fails the account for good. It may keep trading after
-// (a breached account effectively becomes a practice account) but is never "active"
-// again, so a later recovery back above the threshold does NOT clear the breach.
-// `cushion` is the room left before the threshold (only meaningful while un-breached).
-// Returns { mll, threshold, balance, cushion, breached, breach_date } or null when
+// Weekly-reset trailing drawdown. To level old and new accounts, every account starts
+// each competition week at its account size — prior-week balance never carries in — so
+// everyone gets exactly MLL of room below their size when the week opens on Sunday.
+//
+// The loss-limit THRESHOLD trails the highest END-OF-DAY equity: it steps up only at a
+// day's close on a new EOD high, and locks at the starting size once the account is up
+// by the MLL. But a BREACH fires the instant INTRADAY equity touches the threshold,
+// not at the close — an account can plunge past the line intraday and still close
+// green (dr.feelgood, Day 1: -$25k intraday, closed +$4k). So we test each day's
+// intraday equity low (`intradayLows[date]`, <= 0, relative to that day's open, from
+// the realized trade stream) against the threshold set at the PRIOR end of day. A
+// breach is PERMANENT: the account keeps trading (effectively a practice account) but
+// is never "active" again, so a later recovery does NOT clear it.
+//
+// `weekDays` is the schedule's [{day, date}]; `days` is computeMetrics' per-day map
+// (net P&L per day, including the live current-day overlay). Returns
+// { mll, threshold, balance, cushion, breached, breach_date } in week-normalized terms
+// (balance/threshold are "as if the week opened at the account size"), or null when
 // the account size has no known MLL.
-export function drawdownState(dailyRows = [], accountSize) {
+export function weeklyDrawdown(weekDays = [], days = {}, intradayLows = {}, accountSize) {
   const mll = MLL_BY_SIZE[accountSize];
   if (!mll || !accountSize) return null;
   const start = accountSize;
-  const rows = dailyRows
-    .filter((r) => r && r.tradeDay && toNum(r.balance) > 0)
-    .sort((a, b) => String(a.tradeDay).localeCompare(String(b.tradeDay)));
-  let peak = start;
+  let cum = 0; // cumulative week net P&L as of the prior day's close
+  let peak = start; // highest END-OF-DAY equity (never intraday)
   let threshold = start - mll;
   let breached = false;
   let breachDate = null;
-  for (const r of rows) {
-    const bal = toNum(r.balance);
-    peak = Math.max(peak, bal);
-    threshold = Math.min(start, peak - mll); // trails up on new EOD highs, locks at start
-    if (!breached && bal < threshold - 0.005) {
+  let traded = false;
+  for (const { day, date } of weekDays) {
+    const d = days[day];
+    if (!d || !d.traded) continue;
+    traded = true;
+    const net = round2(d.pnl);
+    // The limit doesn't trail intraday, so check the day's intraday equity low against
+    // the threshold carried in from the prior end of day.
+    const low = intradayLows[date] != null ? intradayLows[date] : Math.min(0, net);
+    if (!breached && start + cum + low <= threshold + 0.005) {
       breached = true;
-      breachDate = String(r.tradeDay).slice(0, 10);
+      breachDate = date;
     }
+    // Settle the day, then trail the threshold up on the new end-of-day equity.
+    cum = round2(cum + net);
+    peak = Math.max(peak, start + cum);
+    threshold = Math.min(start, peak - mll);
   }
-  const balance = rows.length ? round2(toNum(rows[rows.length - 1].balance)) : null;
-  const cushion = balance == null ? null : round2(balance - threshold);
-  return { mll, threshold: round2(threshold), balance, cushion, breached, breach_date: breachDate };
+  if (!traded) {
+    return { mll, threshold: round2(start - mll), balance: round2(start), cushion: round2(mll), breached: false, breach_date: null };
+  }
+  const equity = round2(start + cum);
+  return { mll, threshold: round2(threshold), balance: equity, cushion: round2(equity - threshold), breached, breach_date: breachDate };
 }
 
 // todaystats may arrive as [] , [ {...} ] or {...}; pull the live current-day P&L.
@@ -121,7 +140,7 @@ export function computeMetrics(stats, weekDays = [], { currentDay = 0 } = {}) {
     account_size: accountSize,
     balance: latestBalance,
     days_traded: daysTraded,
-    drawdown: drawdownState(daily, accountSize),
+    drawdown: weeklyDrawdown(weekDays, days, stats.intradayLows ?? {}, accountSize),
     overall: {
       pnl: overallPnl,
       return_pct: pctOf(overallPnl, accountSize),

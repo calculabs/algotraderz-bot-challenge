@@ -1,13 +1,13 @@
 {
-  "generated_at": "2026-07-08T16:54:59.746Z",
+  "generated_at": "2026-07-08T21:30:36.317Z",
   "week": {
-    "start": "2026-07-05T22:00:00.746Z",
-    "end": "2026-07-12T22:00:00.746Z"
+    "start": "2026-07-05T22:00:00.317Z",
+    "end": "2026-07-12T22:00:00.317Z"
   },
   "schedule": {
     "currentDay": 3,
     "totalDays": 5,
-    "phase": "active",
+    "phase": "break",
     "days": [
       {
         "day": 1,
@@ -58,8 +58,8 @@
       "days_traded": 3,
       "drawdown": {
         "mll": 4500,
-        "threshold": 145732.68,
-        "balance": 149576.87,
+        "threshold": 145500,
+        "balance": 149344.19,
         "cushion": 3844.19,
         "breached": false,
         "breach_date": null
@@ -300,21 +300,21 @@
       "shared": true,
       "error": null,
       "account_size": 150000,
-      "balance": 191692.38,
+      "balance": 193398.78,
       "days_traded": 3,
       "drawdown": {
         "mll": 4500,
         "threshold": 150000,
-        "balance": 191692.38,
-        "cushion": 41692.38,
-        "breached": false,
-        "breach_date": null
+        "balance": 155498.5,
+        "cushion": 5498.5,
+        "breached": true,
+        "breach_date": "2026-07-06"
       },
       "overall": {
-        "pnl": 3792.1,
-        "return_pct": 2.5281,
-        "trades": 482,
-        "balance": 191692.38
+        "pnl": 5498.5,
+        "return_pct": 3.6657,
+        "trades": 505,
+        "balance": 193398.78
       },
       "days": {
         "1": {
@@ -344,11 +344,11 @@
           "date": "2026-07-08",
           "traded": true,
           "live": true,
-          "pnl": 6292,
-          "return_pct": 4.1947,
-          "trades": 148,
-          "win_rate": 57.43,
-          "balance": 191692.38
+          "pnl": 7998.4,
+          "return_pct": 5.3323,
+          "trades": 171,
+          "win_rate": 55.56,
+          "balance": 193398.78
         },
         "4": {
           "day": 4,
@@ -382,21 +382,21 @@
       "shared": true,
       "error": null,
       "account_size": 50000,
-      "balance": 49497.82,
+      "balance": 49065.42,
       "days_traded": 3,
       "drawdown": {
         "mll": 2000,
         "threshold": 48000,
-        "balance": 49497.82,
-        "cushion": 1497.82,
+        "balance": 49065.42,
+        "cushion": 1065.42,
         "breached": true,
         "breach_date": "2026-07-06"
       },
       "overall": {
-        "pnl": -502.18,
-        "return_pct": -1.0044,
-        "trades": 133,
-        "balance": 49497.82
+        "pnl": -934.58,
+        "return_pct": -1.8692,
+        "trades": 150,
+        "balance": 49065.42
       },
       "days": {
         "1": {
@@ -426,11 +426,11 @@
           "date": "2026-07-08",
           "traded": true,
           "live": true,
-          "pnl": -171.38,
-          "return_pct": -0.3428,
-          "trades": 66,
-          "win_rate": 16.67,
-          "balance": 49497.82
+          "pnl": -603.78,
+          "return_pct": -1.2076,
+          "trades": 83,
+          "win_rate": 15.66,
+          "balance": 49065.42
         },
         "4": {
           "day": 4,
@@ -468,8 +468,8 @@
       "days_traded": 3,
       "drawdown": {
         "mll": 2000,
-        "threshold": 49651.62,
-        "balance": 49567.5,
+        "threshold": 48000,
+        "balance": 47915.88,
         "cushion": -84.12,
         "breached": true,
         "breach_date": "2026-07-08"
@@ -546,21 +546,21 @@
       "shared": true,
       "error": null,
       "account_size": 150000,
-      "balance": 152202.72,
+      "balance": 151756.78,
       "days_traded": 3,
       "drawdown": {
         "mll": 4500,
-        "threshold": 147702.72,
-        "balance": 152202.72,
+        "threshold": 145737.34,
+        "balance": 150237.34,
         "cushion": 4500,
         "breached": false,
         "breach_date": null
       },
       "overall": {
-        "pnl": 683.28,
-        "return_pct": 0.4555,
-        "trades": 90,
-        "balance": 152202.72
+        "pnl": 237.34,
+        "return_pct": 0.1582,
+        "trades": 95,
+        "balance": 151756.78
       },
       "days": {
         "1": {
@@ -590,11 +590,11 @@
           "date": "2026-07-08",
           "traded": true,
           "live": true,
-          "pnl": 1676.68,
-          "return_pct": 1.1178,
-          "trades": 26,
-          "win_rate": 57.69,
-          "balance": 152202.72
+          "pnl": 1230.74,
+          "return_pct": 0.8205,
+          "trades": 31,
+          "win_rate": 54.84,
+          "balance": 151756.78
         },
         "4": {
           "day": 4,

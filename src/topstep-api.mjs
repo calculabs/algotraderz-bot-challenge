@@ -53,23 +53,55 @@ export async function checkSharing(accountId) {
   }
 }
 
-// The trailing drawdown threshold trails the highest END-OF-DAY balance over the
-// account's whole life (the peak often predates the competition week), so `daily`
-// is fetched from inception. Week-scoped scoring filters this by trade date, so a
-// wider window changes nothing about the standings.
-const LIFETIME_START = "2019-01-01T00:00:00.000Z";
-const dailyBody = (id, range) => ({ tradingAccountId: id, startTradeDay: LIFETIME_START, endTradeDay: range.end });
+// The weekly-reset drawdown starts every account at its account size on Sunday, so
+// nothing before the week open matters — the per-day series is scoped to the week.
+const dailyBody = (id, range) => ({ tradingAccountId: id, startTradeDay: range.start, endTradeDay: range.end });
 const accountNameOf = (id) => call(`/Statistics/getAccountName?tradingAccountId=${id}`).catch(() => null);
 const todayStatsOf = (id) => call(`/Statistics/todaystats?accountId=${id}`, { method: "POST", body: {} }).catch(() => null);
+const tradesOf = (id, range) =>
+  call("/Statistics/trades", { method: "POST", body: { tradingAccountId: id, startTradeDay: range.start, endTradeDay: range.end } }).catch(() => []);
+
+// Net realized P&L of one trade. The daily/EOD balance is net of fees + commissions,
+// so an intraday equity reconstruction has to be too.
+const tradeNet = (t) => (Number(t.profitAndLoss) || 0) - (Number(t.fees) || 0) - (Number(t.commissions) || 0);
+
+// Reconstruct each day's intraday equity low from the realized-trade stream. An MLL
+// breach fires the instant intraday equity touches the line, so end-of-day balances
+// miss it — an account can plunge tens of thousands intraday and still close green.
+// For each tradeDay we walk fills in fill order, track the running cumulative net
+// P&L, and keep its minimum (floored at 0 = the day's open). Returns
+// { "YYYY-MM-DD": low } where each low <= 0 (loss relative to that day's open).
+export function intradayLowsByDay(trades = []) {
+  const byDay = new Map();
+  for (const t of Array.isArray(trades) ? trades : []) {
+    const day = String(t.tradeDay ?? "").slice(0, 10);
+    if (!day) continue;
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(t);
+  }
+  const lows = {};
+  for (const [day, rows] of byDay) {
+    rows.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+    let cum = 0;
+    let low = 0;
+    for (const t of rows) {
+      cum += tradeNet(t);
+      if (cum < low) low = cum;
+    }
+    lows[day] = Math.round(low * 100) / 100;
+  }
+  return lows;
+}
 
 // Fetch everything we need for one account, scoped to a { start, end } window.
 export async function fetchAccountStats(accountId, range) {
   const id = Number(accountId);
-  const [shared, accountName, daily, todaystats] = await Promise.all([
+  const [shared, accountName, daily, todaystats, trades] = await Promise.all([
     checkSharing(id),
     accountNameOf(id),
     call("/Statistics/daily", { method: "POST", body: dailyBody(id, range) }).catch(() => []),
-    todayStatsOf(id)
+    todayStatsOf(id),
+    tradesOf(id, range)
   ]);
 
   return {
@@ -78,18 +110,26 @@ export async function fetchAccountStats(accountId, range) {
     shared,
     daily: Array.isArray(daily) ? daily : [],
     todaystats,
+    intradayLows: intradayLowsByDay(trades),
     range
   };
 }
 
 // Lean variant for the in-browser panel: per-day series + live current-day stats +
-// the account name (which encodes the account size).
+// intraday lows (for the drawdown line) + the account name (which encodes the size).
 export async function fetchWeeklyStats(accountId, range) {
   const id = Number(accountId);
-  const [accountName, daily, todaystats] = await Promise.all([
+  const [accountName, daily, todaystats, trades] = await Promise.all([
     accountNameOf(id),
     call("/Statistics/daily", { method: "POST", body: dailyBody(id, range) }).catch(() => []),
-    todayStatsOf(id)
+    todayStatsOf(id),
+    tradesOf(id, range)
   ]);
-  return { accountId: id, accountName: typeof accountName === "string" ? accountName : null, daily: Array.isArray(daily) ? daily : [], todaystats };
+  return {
+    accountId: id,
+    accountName: typeof accountName === "string" ? accountName : null,
+    daily: Array.isArray(daily) ? daily : [],
+    todaystats,
+    intradayLows: intradayLowsByDay(trades)
+  };
 }
