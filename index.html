@@ -131,15 +131,19 @@
     .card-link { display: block; text-decoration: none; color: inherit; -webkit-tap-highlight-color: transparent; }
     .card-link:hover .pod, .card-link:hover .item { border-color: rgba(255, 255, 255, 0.22); }
 
-    .list { display: grid; gap: 12px; margin-top: 8px; }
-    .item { display: flex; align-items: center; gap: 16px; border: 1px solid var(--card-border); background: var(--card); border-radius: 18px; padding: 18px 22px; }
-    .item .num { width: 40px; height: 40px; flex: none; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 16px; background: rgba(255,255,255,.05); color: var(--muted); }
-    .item .who { flex: 1; min-width: 0; }
-    .item .who .nm { font-weight: 700; font-size: 18px; }
-    .item .who .tag { display: inline-block; margin-left: 10px; font-size: 11px; font-weight: 700; letter-spacing: .14em; color: var(--red); vertical-align: middle; }
-    .item .stat { text-align: right; flex: none; }
-    .item .stat .big { font-weight: 800; font-size: 20px; }
-    .item .stat .sub { color: var(--muted-dim); font-size: 13px; margin-top: 3px; }
+    /* minmax(0,1fr) caps the row at the container width — without it the implicit
+       auto column grows to the item's max-content and the long sub-line overflows. */
+    .list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin-top: 8px; }
+    /* num | (name+tag over sub-line) | big metric — the min-width:0 middle keeps the
+       sub-line bounded so it wraps instead of pushing the card past the viewport */
+    .item { display: flex; align-items: center; gap: 14px; border: 1px solid var(--card-border); background: var(--card); border-radius: 18px; padding: 16px 20px; }
+    .item .num { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 16px; background: rgba(255,255,255,.05); color: var(--muted); }
+    .item .main { flex: 1; min-width: 0; }
+    .item .who { display: flex; align-items: baseline; gap: 10px; }
+    .item .who .nm { min-width: 0; font-weight: 700; font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .item .who .tag { flex: none; font-size: 11px; font-weight: 700; letter-spacing: .12em; color: var(--red); }
+    .item .sub { color: var(--muted-dim); font-size: 13px; margin-top: 3px; overflow-wrap: anywhere; }
+    .item .big { flex: none; text-align: right; font-weight: 800; font-size: 20px; white-space: nowrap; }
     .item.elim { opacity: .62; }
     .item.elim .num { background: rgba(247,112,102,.10); color: var(--red); font-size: 18px; }
 
@@ -220,10 +224,11 @@
       .pod .row .v { font-size: 13px; }
       .lead-pill { font-size: 10px; padding: 7px 4px; margin-top: 10px; letter-spacing: 0; }
       .dd { margin-top: 9px; } .dd-label { font-size: 9px; letter-spacing: .02em; } .dd-tag { font-size: 9.5px; }
-      .item { padding: 15px 16px; gap: 12px; }
+      .item { padding: 14px 15px; gap: 11px; }
+      .item .num { width: 34px; height: 34px; font-size: 15px; }
       .item .who .nm { font-size: 16px; }
-      .item .stat .big { font-size: 18px; }
-      .item .stat .sub { font-size: 12px; }
+      .item .big { font-size: 18px; }
+      .item .sub { font-size: 11.5px; }
     }
   </style>
 </head>
@@ -361,11 +366,11 @@
       return linked(`
       <div class="item${breached ? " elim" : ""}">
         <div class="num">${row.rank}</div>
-        <div class="who"><span class="nm">${esc(row.name)}</span>${tag}</div>
-        <div class="stat">
-          ${big}
+        <div class="main">
+          <div class="who"><span class="nm">${esc(row.name)}</span>${tag}</div>
           <div class="sub">Weekly P&L <span class="${cls(row.week_pnl)}">${money(row.week_pnl, { sign: true })}</span> · Today P&L <span class="${cls(row.today_pnl)}">${money(row.today_pnl, { sign: true })}</span>${ddCushionSub(row.drawdown)}</div>
         </div>
+        ${big}
       </div>`, row.url);
     };
 
