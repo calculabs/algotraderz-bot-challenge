@@ -553,7 +553,9 @@
     function drawWinner(rows, celeb) {
       const ch = DATA.challenge || {};
       const ranked = rankByScope(rows, "overall", celeb.sched.currentDay ?? 0, "pct");
-      const survivors = ranked.filter((r) => !r.drawdown?.breached && Number.isFinite(Number(r.return_pct)));
+      // A champion must have actually competed — non-breached AND traded this week.
+      // A just-joined account with no data (0.00%) isn't a winner.
+      const survivors = ranked.filter((r) => !r.drawdown?.breached && (r.days_traded ?? 0) > 0 && Number.isFinite(Number(r.return_pct)));
       const win = survivors[0];
       if (!win) return false;
       const runners = survivors.slice(1, 3);
@@ -608,6 +610,20 @@
       const rest = rows.slice(3);
       const order = [podium[2], podium[0], podium[1]];
       const placeOf = [3, 1, 2];
+      // Champion-eligible = actually competed this week (non-breached AND traded). When
+      // nobody qualifies during the completed-week window (e.g. a reset weekend where the
+      // only entrants just joined with no data), show the invite/wait card instead of a
+      // hollow 0.00% podium.
+      const eligible = rows.filter((r) => !r.drawdown?.breached && (r.days_traded ?? 0) > 0 && Number.isFinite(Number(r.return_pct)));
+      const showInvite = rows.length === 0 || (!!celeb && eligible.length === 0);
+      const inviteCard = `<section class="empty-board">
+          <div class="eb-emoji">${rows.length ? "🏁" : "🤖"}</div>
+          <div class="eb-title">${rows.length ? "No results in yet" : "No bots on the board yet"}</div>
+          <div class="eb-sub">${rows.length
+            ? "The board resets each week — a new week opens soon. Lock in your account with <code>/join</code>."
+            : "Be the first — run <code>/join &lt;your TopstepX share link&gt;</code> in Discord."}</div>
+          <a class="btn primary linkbtn" href="${esc(DISCORD_INVITE)}" target="_blank" rel="noreferrer" style="max-width:260px;margin:18px auto 0;">Open Discord →</a>
+        </section>`;
       const rules = (ch.rules || []).map((r, i) => `<div class="chip${i > 0 ? " warn" : ""}">${esc(r)}</div>`).join("");
       const updated = DATA.generated_at
         ? new Date(DATA.generated_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
@@ -625,14 +641,9 @@
           <div class="progress-label">${esc(scopeSubtitle(rows))}</div>
         </header>
         ${backBar}
-        ${rows.length === 0 ? `<section class="empty-board">
-          <div class="eb-emoji">🤖</div>
-          <div class="eb-title">No bots on the board yet</div>
-          <div class="eb-sub">Be the first — run <code>/join &lt;your TopstepX share link&gt;</code> in Discord.</div>
-          <a class="btn primary linkbtn" href="${esc(DISCORD_INVITE)}" target="_blank" rel="noreferrer" style="max-width:260px;margin:18px auto 0;">Open Discord →</a>
-        </section>` : ""}
-        ${podium.length ? `<section class="podium">${order.map((r, i) => (r ? podCard(r, placeOf[i]) : `<div class="pod" style="visibility:hidden"></div>`)).join("")}</section>` : ""}
-        ${rest.length ? `<section class="list">${rest.map(listItem).join("")}</section>` : ""}
+        ${showInvite ? inviteCard : ""}
+        ${!showInvite && podium.length ? `<section class="podium">${order.map((r, i) => (r ? podCard(r, placeOf[i]) : `<div class="pod" style="visibility:hidden"></div>`)).join("")}</section>` : ""}
+        ${!showInvite && rest.length ? `<section class="list">${rest.map(listItem).join("")}</section>` : ""}
         ${rules ? `<section class="rules">${rules}</section>` : ""}
         <footer>Last updated · ${esc(updated)}</footer>`;
 

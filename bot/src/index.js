@@ -200,10 +200,11 @@ async function fetchStandings(env) {
   }
 }
 
-// Top three surviving (non-breached) accounts by % return — the champion + runners-up.
+// Top three champion-eligible accounts by % return — non-breached AND actually traded
+// this week (a just-joined 0-trade account is not a champion).
 export function pickPodium(rows) {
   return (rows || [])
-    .filter((r) => !r.drawdown?.breached && Number.isFinite(Number(r.overall?.return_pct)))
+    .filter((r) => !r.drawdown?.breached && Number(r.overall?.trades) > 0 && Number.isFinite(Number(r.overall?.return_pct)))
     .sort((a, b) => b.overall.return_pct - a.overall.return_pct)
     .slice(0, 3);
 }

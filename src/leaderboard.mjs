@@ -183,6 +183,7 @@ export function flattenScope(row, scope, currentDay = 0) {
     account_size: row.account_size,
     source: row.source,
     drawdown: row.drawdown ?? null,
+    days_traded: row.days_traded ?? 0,
     pnl: scopeM ? scopeM.pnl : zero,
     return_pct: scopeM ? scopeM.return_pct : zero,
     traded: scopeM ? scopeM.traded ?? true : false,
