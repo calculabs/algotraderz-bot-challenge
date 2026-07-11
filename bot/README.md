@@ -96,7 +96,7 @@ In [`../src/roster.mjs`](../src/roster.mjs) set:
 export const ROSTER_ENDPOINT = "https://algotraderz-bot.<your-subdomain>.workers.dev/roster";
 ```
 
-Commit + push. GitHub Pages redeploys, and both the live board and the 30-minute scrape now merge in everyone who ran `/join`. Done.
+Commit + push. GitHub Pages redeploys, and both the live board and the 15-minute scrape now merge in everyone who ran `/join`. Done.
 
 ### 8. (Optional) Weekly champion announcement
 

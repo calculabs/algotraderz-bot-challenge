@@ -92,7 +92,7 @@ No dependencies to install — everything uses Node's built-in `fetch`.
 
 1. Push this folder to a GitHub repo.
 2. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
-3. `.github/workflows/leaderboard.yml` re-runs the scrape every 30 minutes (and on push),
+3. `.github/workflows/leaderboard.yml` re-runs the scrape every 15 minutes (and on push),
    rebuilds `data/leaderboard.json`, and deploys the static site. Tune the `cron` to taste.
 
 ```bash

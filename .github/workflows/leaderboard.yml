@@ -5,8 +5,8 @@ on:
   push:
     branches: [main]
   schedule:
-    # Refresh every 30 min. Cron is UTC; the competition runs Sun open -> Fri close.
-    - cron: "*/30 * * * *"
+    # Refresh every 15 min. Cron is UTC; the competition runs Sun open -> Fri close.
+    - cron: "*/15 * * * *"
 
 permissions:
   contents: read
