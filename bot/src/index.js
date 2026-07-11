@@ -96,24 +96,35 @@ const userOf = (interaction) => interaction.member?.user || interaction.user; //
 const displayName = (u) => u.global_name || u.username || String(u.id);
 const adminIds = (env) => String(env.ADMIN_IDS || "").split(",").map((s) => s.trim()).filter(Boolean);
 
-// Accounts lock once the trading week is live (Sun open → Fri close) so nobody can
-// swap to a hotter account mid-competition. Joining and changing links is only open
-// during the weekend break — phase "done" (after Friday's close) or "pre" (before the
-// first week ever opens). Uses the site's canonical CME calendar so the two can't drift.
+const truthy = (v) => /^(1|true|on|yes)$/i.test(String(v ?? "").trim());
+
+// The weekend break — phase "done" (after Friday's close) or "pre" (before the first
+// week ever opens) — is when the board is open to changes. During the live week
+// (Sun open → Fri close) it's closed. Uses the site's canonical CME calendar so the
+// two can't drift.
 export function registrationOpen(now = new Date()) {
   const phase = weekSchedule(now).phase;
   return phase === "done" || phase === "pre";
 }
 
-// Shared by /join and /link — enforce the lock, validate the link, store, confirm.
+// Shared by /join and /link. Mid-week we lock the thing that actually games the
+// competition — SWAPPING to a different account (via /link, or a re-/join with a new
+// account). A brand-new late join stays open (friendly) unless the organizer sets
+// LOCK_JOIN. Re-submitting your existing account is always a harmless no-op.
 async function upsertLink(interaction, env, { updating }) {
   const u = userOf(interaction);
-  if (!registrationOpen()) {
-    return reply("🔒 The challenge is live — accounts are locked until the weekend. You can join or change your account after **Friday's close**, before **Sunday's open**.");
-  }
   const accountId = parseAccountId(optionValue(interaction, "link"));
   if (accountId == null) {
     return reply("❌ That doesn't look like a TopstepX share link. Copy it from your stats page — e.g. `https://topstepx.com/share/stats?share=24801853`.");
+  }
+  const existing = await env.ROSTER.get(rosterKey(u.id), "json");
+  const isSwap = existing ? existing.accountId !== accountId : false;
+  const isNewJoin = !existing;
+  const gated = isSwap || (isNewJoin && truthy(env.LOCK_JOIN));
+  if (gated && !registrationOpen()) {
+    return reply(isSwap
+      ? "🔒 You can't swap accounts mid-week. Account changes reopen after **Friday's close**, before **Sunday's open**."
+      : "🔒 Joining is closed while the week is live. Come back after **Friday's close** to enter.");
   }
   const entry = { discordId: u.id, name: displayName(u), url: shareUrl(accountId), accountId, updatedAt: new Date().toISOString() };
   await env.ROSTER.put(rosterKey(u.id), JSON.stringify(entry));

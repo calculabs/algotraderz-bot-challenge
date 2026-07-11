@@ -20,6 +20,10 @@ SITE_URL = "https://calculabs.github.io/algotraderz-bot-challenge/"
 # Turn on Discord Developer Mode, right-click yourself → Copy User ID.
 ADMIN_IDS = "512516249507463169, 813975359485116456"
 
+# Mid-week, account SWAPS are always locked. Brand-new late joins stay open by default
+# (friendly). Set this to "true" to also close new joins during the live week.
+LOCK_JOIN = "false"
+
 # Channel for the weekly champion announcement. Right-click the channel → Copy
 # Channel ID. Leave blank to disable announcements. The bot needs "Send Messages"
 # in this channel, and DISCORD_BOT_TOKEN must be set as a secret (see below).

@@ -23,7 +23,7 @@ Traders manage themselves in the server:
 
 All replies are **ephemeral** (only the person running the command sees them), so the channel stays clean.
 
-**Accounts lock during the live week.** `/join` and `/link` only work during the weekend break — after Friday's CME close, before Sunday's open — so nobody can swap to a hotter account mid-competition. Try them while the week is live and the bot replies with a 🔒 notice. `/leave`, `/mylink`, and `/standings` work anytime.
+**Swaps lock during the live week.** Once the trading week is live (Sun open → Fri close), you can't switch to a different account — `/link` (or a re-`/join` with a new account) replies with a 🔒 notice until the weekend break. Changes reopen after Friday's CME close. **Brand-new late joins stay open** by default (friendly to stragglers); set `LOCK_JOIN = "true"` in `wrangler.toml` to close those during the week too. `/leave`, `/mylink`, and `/standings` work anytime.
 
 ---
 
