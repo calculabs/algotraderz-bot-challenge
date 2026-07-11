@@ -165,6 +165,11 @@
     .chip.warn { border-color: rgba(247,112,102,.28); color: #e79a92; }
     footer { text-align: center; color: var(--muted-dim); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; font-weight: 600; margin-top: 8px; }
     .empty { text-align: center; color: var(--muted); padding: 60px 0; }
+    .empty-board { text-align: center; border: 1px dashed var(--card-border); border-radius: 22px; padding: 44px 24px; margin-top: 8px; background: rgba(255,255,255,.015); }
+    .empty-board .eb-emoji { font-size: 44px; opacity: .8; }
+    .empty-board .eb-title { font-weight: 800; font-size: 20px; margin: 12px 0 6px; }
+    .empty-board .eb-sub { color: var(--muted); font-size: 14px; line-height: 1.5; }
+    .empty-board .eb-sub code { background: rgba(255,255,255,.06); border-radius: 6px; padding: 2px 6px; font-size: 12.5px; }
 
     /* ---------- manage panel ---------- */
     .manage-btn {
@@ -607,9 +612,9 @@
       const updated = DATA.generated_at
         ? new Date(DATA.generated_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
         : "";
-      // While the celebration window is open but the user has opted into the full
-      // board, offer a way back to the champion view.
-      const backBar = celeb ? `<div class="winner-return"><button class="see-standings" id="backWinner">🏆 Back to winner</button></div>` : "";
+      // Only when the user actively left an existing winner view (SHOW_BOARD) — not when
+      // the board is showing because there's no champion (empty roster / all breached).
+      const backBar = (celeb && SHOW_BOARD) ? `<div class="winner-return"><button class="see-standings" id="backWinner">🏆 Back to winner</button></div>` : "";
 
       $("app").innerHTML = `
         <header>
@@ -620,6 +625,12 @@
           <div class="progress-label">${esc(scopeSubtitle(rows))}</div>
         </header>
         ${backBar}
+        ${rows.length === 0 ? `<section class="empty-board">
+          <div class="eb-emoji">🤖</div>
+          <div class="eb-title">No bots on the board yet</div>
+          <div class="eb-sub">Be the first — run <code>/join &lt;your TopstepX share link&gt;</code> in Discord.</div>
+          <a class="btn primary linkbtn" href="${esc(DISCORD_INVITE)}" target="_blank" rel="noreferrer" style="max-width:260px;margin:18px auto 0;">Open Discord →</a>
+        </section>` : ""}
         ${podium.length ? `<section class="podium">${order.map((r, i) => (r ? podCard(r, placeOf[i]) : `<div class="pod" style="visibility:hidden"></div>`)).join("")}</section>` : ""}
         ${rest.length ? `<section class="list">${rest.map(listItem).join("")}</section>` : ""}
         ${rules ? `<section class="rules">${rules}</section>` : ""}
@@ -680,7 +691,8 @@
     async function refresh() {
       try {
         CONFIG = await loadRoster(); // pick up newly self-added players each cycle
-        if (!CONFIG.participants.length) throw new Error("empty roster");
+        // An empty roster is a valid state now (fresh week, nobody's joined yet) — build
+        // it live so the board shows the invite empty-state, not a stale snapshot.
         DATA = await buildLive(CONFIG);
         draw();
       } catch (e) {
