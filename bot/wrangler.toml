@@ -20,5 +20,17 @@ SITE_URL = "https://calculabs.github.io/algotraderz-bot-challenge/"
 # Turn on Discord Developer Mode, right-click yourself → Copy User ID.
 ADMIN_IDS = "512516249507463169, 813975359485116456"
 
-# No bot token is needed by the Worker itself — it verifies signatures and replies
-# inline. The token is only used by register.js, run locally.
+# Channel for the weekly champion announcement. Right-click the channel → Copy
+# Channel ID. Leave blank to disable announcements. The bot needs "Send Messages"
+# in this channel, and DISCORD_BOT_TOKEN must be set as a secret (see below).
+ANNOUNCE_CHANNEL_ID = ""
+
+# Weekly champion post. Cron runs hourly on Fri/Sat/Sun (UTC); the handler self-gates
+# so it posts exactly once, after Friday's CME close. Harmless if announcements are off.
+[triggers]
+crons = ["0 * * * 5,6,0"]
+
+# Secrets are NOT stored here — set the bot token once with:
+#   npx wrangler secret put DISCORD_BOT_TOKEN
+# Needed only for the announcement POST (and by register.js, run locally). Interaction
+# replies verify with DISCORD_PUBLIC_KEY above and never touch the token.

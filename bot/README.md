@@ -15,13 +15,15 @@ Traders manage themselves in the server:
 | Command | What it does |
 | --- | --- |
 | `/join <share link>` | Join, or update your link |
-| `/link <share link>` | Swap accounts mid-week |
+| `/link <share link>` | Swap your account (weekend only) |
 | `/mylink` | Show what's on file for you |
 | `/leave` | Drop out |
 | `/standings` | Link to the live board |
 | `/remove <user>` | **Organizer only** — prune someone |
 
 All replies are **ephemeral** (only the person running the command sees them), so the channel stays clean.
+
+**Accounts lock during the live week.** `/join` and `/link` only work during the weekend break — after Friday's CME close, before Sunday's open — so nobody can swap to a hotter account mid-competition. Try them while the week is live and the bot replies with a 🔒 notice. `/leave`, `/mylink`, and `/standings` work anytime.
 
 ---
 
@@ -96,6 +98,20 @@ export const ROSTER_ENDPOINT = "https://algotraderz-bot.<your-subdomain>.workers
 
 Commit + push. GitHub Pages redeploys, and both the live board and the 30-minute scrape now merge in everyone who ran `/join`. Done.
 
+### 8. (Optional) Weekly champion announcement
+
+Have the bot post the winner into a channel after Friday's close:
+
+1. Right-click the target channel → **Copy Channel ID** → set `ANNOUNCE_CHANNEL_ID` in `wrangler.toml`.
+2. Give the bot **Send Messages** in that channel (it doesn't have it by default).
+3. Store the bot token as a secret (used only for this POST):
+   ```bash
+   npx wrangler secret put DISCORD_BOT_TOKEN
+   ```
+4. `npm run deploy`.
+
+A cron runs hourly Fri–Sun and self-gates, so it posts the champion **exactly once** after Friday's CME close (idempotent via a per-week KV marker), pulling standings from the published `data/leaderboard.json`. Leave `ANNOUNCE_CHANNEL_ID` blank to keep it off.
+
 ---
 
 ## The single ask of Scalpface (server owner)
@@ -108,7 +124,7 @@ Nothing else: no Google/Firebase access, no hosting, no billing. The bot, its st
 
 ## Notes
 
-- **No bot token in the Worker.** It verifies Discord's Ed25519 request signature with the public key and replies inline — the token is only for registering commands and adding the bot.
+- **Interaction replies need no bot token** — they verify Discord's Ed25519 request signature with the public key and reply inline. The token (a secret) is only used to *register* commands and to *post* the weekly announcement.
 - **Cost:** $0. Cloudflare's free tier covers this comfortably; no Blaze/credit card like Cloud Functions would need.
 - **`/roster`** returns `[{ discordId, name, url, accountId, updatedAt }]` with `Access-Control-Allow-Origin: *`. The site reads `name` + `url`.
 - **Local dev:** `npm run dev` runs the Worker locally (`wrangler dev`); use a tunnel (e.g. `cloudflared`) if you want to point Discord at it during development.

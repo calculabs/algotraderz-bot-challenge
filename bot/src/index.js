@@ -13,6 +13,8 @@
 // public key and replies inline). The token is used solely by register.js, run once
 // from your laptop to publish the command list.
 
+import { weekSchedule } from "../../src/calendar.mjs";
+
 const JSON_HEADERS = { "content-type": "application/json" };
 const CORS = { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type" };
 
@@ -94,9 +96,21 @@ const userOf = (interaction) => interaction.member?.user || interaction.user; //
 const displayName = (u) => u.global_name || u.username || String(u.id);
 const adminIds = (env) => String(env.ADMIN_IDS || "").split(",").map((s) => s.trim()).filter(Boolean);
 
-// Shared by /join and /link — validate the link, store the entry, confirm.
+// Accounts lock once the trading week is live (Sun open → Fri close) so nobody can
+// swap to a hotter account mid-competition. Joining and changing links is only open
+// during the weekend break — phase "done" (after Friday's close) or "pre" (before the
+// first week ever opens). Uses the site's canonical CME calendar so the two can't drift.
+export function registrationOpen(now = new Date()) {
+  const phase = weekSchedule(now).phase;
+  return phase === "done" || phase === "pre";
+}
+
+// Shared by /join and /link — enforce the lock, validate the link, store, confirm.
 async function upsertLink(interaction, env, { updating }) {
   const u = userOf(interaction);
+  if (!registrationOpen()) {
+    return reply("🔒 The challenge is live — accounts are locked until the weekend. You can join or change your account after **Friday's close**, before **Sunday's open**.");
+  }
   const accountId = parseAccountId(optionValue(interaction, "link"));
   if (accountId == null) {
     return reply("❌ That doesn't look like a TopstepX share link. Copy it from your stats page — e.g. `https://topstepx.com/share/stats?share=24801853`.");
@@ -148,7 +162,71 @@ const COMMANDS = {
   }
 };
 
+// ---- weekly champion announcement ----
+const siteBase = (env) => (env.SITE_URL || "https://calculabs.github.io/algotraderz-bot-challenge/").replace(/\/?$/, "/");
+
+// Read the standings the site already publishes (CI keeps it current). After Friday's
+// close it holds the finished week until Sunday's reset.
+async function fetchStandings(env) {
+  try {
+    const res = await fetch(siteBase(env) + "data/leaderboard.json", { cf: { cacheTtl: 0 } });
+    return res.ok ? await res.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+// Top three surviving (non-breached) accounts by % return — the champion + runners-up.
+export function pickPodium(rows) {
+  return (rows || [])
+    .filter((r) => !r.drawdown?.breached && Number.isFinite(Number(r.overall?.return_pct)))
+    .sort((a, b) => b.overall.return_pct - a.overall.return_pct)
+    .slice(0, 3);
+}
+
+export function championEmbed(podium, env) {
+  const w = podium[0];
+  const pct = (v) => (v > 0 ? "+" : "") + Number(v).toFixed(2) + "%";
+  const money = (v) => (v >= 0 ? "+" : "-") + "$" + Math.abs(Number(v)).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const runners = podium.slice(1).map((r, i) => `${["🥈", "🥉"][i]} **${r.name}** (${pct(r.overall.return_pct)})`).join("   ");
+  return {
+    title: `🏆 Champion of the Week — ${w.name}`,
+    description:
+      `**${pct(w.overall.return_pct)}** return · **${money(w.overall.pnl)}** weekly P&L` +
+      (runners ? `\n\n${runners}` : "") +
+      `\n\n[Full board](${siteBase(env)})\nNew week opens Sunday — \`/join\` to enter.`,
+    color: 0xf4c04f
+  };
+}
+
+async function postToChannel(env, payload) {
+  if (!env.ANNOUNCE_CHANNEL_ID || !env.DISCORD_BOT_TOKEN) return false;
+  const res = await fetch(`https://discord.com/api/v10/channels/${env.ANNOUNCE_CHANNEL_ID}/messages`, {
+    method: "POST",
+    headers: { authorization: `Bot ${env.DISCORD_BOT_TOKEN}`, "content-type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  return res.ok;
+}
+
+// Once per week, after Friday's close, crown the champion. Idempotent: a KV marker per
+// week means repeated cron fires (or a redeploy) never double-post.
+async function announceChampion(env) {
+  const sched = weekSchedule(new Date());
+  if (sched.phase !== "done") return; // week still running (or pre-season)
+  const marker = `announced:${sched.weekStart}`;
+  if (await env.ROSTER.get(marker)) return; // already crowned this week
+  const podium = pickPodium((await fetchStandings(env))?.rows);
+  if (!podium.length) { await env.ROSTER.put(marker, "1"); return; } // nobody to crown; don't retry
+  const ok = await postToChannel(env, { embeds: [championEmbed(podium, env)] });
+  if (ok) await env.ROSTER.put(marker, "1");
+}
+
 export default {
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(announceChampion(env));
+  },
+
   async fetch(request, env) {
     const url = new URL(request.url);
 
