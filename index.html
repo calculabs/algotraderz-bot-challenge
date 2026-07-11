@@ -318,7 +318,7 @@
   </style>
 </head>
 <body>
-  <button class="manage-btn" id="manageBtn">⚙ Manage</button>
+  <button class="manage-btn" id="manageBtn">＋ Join</button>
   <div class="page" id="app"><div class="empty">Loading standings…</div></div>
 
   <div class="overlay" id="overlay">
@@ -697,7 +697,7 @@
         draw();
       } catch (e) {
         try { DATA = await (await fetch("./data/leaderboard.json", { cache: "no-store" })).json(); draw(); }
-        catch { showEmpty("No standings yet. Join in Discord with <code>/join</code> — see the ⚙ Manage button."); }
+        catch { showEmpty("No standings yet. Join in Discord with <code>/join</code> — see the ＋ Join button."); }
       }
     }
 
