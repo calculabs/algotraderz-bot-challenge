@@ -170,6 +170,19 @@ const COMMANDS = {
     const existed = await env.ROSTER.get(rosterKey(targetId));
     await env.ROSTER.delete(rosterKey(targetId));
     return reply(existed ? `🗑️ Removed <@${targetId}> from the board.` : "That person wasn't on the board.");
+  },
+
+  // Organizer-only: post the current champion to the announcements channel now. Same
+  // path the weekly cron uses (a live end-to-end test + a manual re-post button).
+  async announce(interaction, env) {
+    const u = userOf(interaction);
+    if (!adminIds(env).includes(u.id)) return reply("⛔ Only the organizer can post announcements.");
+    const podium = pickPodium((await fetchStandings(env))?.rows);
+    if (!podium.length) return reply("Nothing to announce yet — no eligible (non-breached) accounts with results on the board.");
+    const ok = await postToChannel(env, { embeds: [championEmbed(podium, env)] });
+    return reply(ok
+      ? `✅ Posted the champion (**${podium[0].name}**) to the announcements channel.`
+      : "⚠️ Couldn't post. Check: the `DISCORD_BOT_TOKEN` secret is set, `ANNOUNCE_CHANNEL_ID` is filled in, and I have **Send Messages** in that channel.");
   }
 };
 

@@ -31,6 +31,11 @@ const commands = [
     // Hidden from everyone by default; a server admin can grant it per-role in
     // Server Settings → Integrations. The Worker also re-checks ADMIN_IDS.
     default_member_permissions: "0"
+  },
+  {
+    name: "announce",
+    description: "(Organizer) Post the current champion to the announcements channel",
+    default_member_permissions: "0"
   }
 ];
 
