@@ -1,0 +1,24 @@
+name = "algotraderz-bot"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+# Roster storage — one KV namespace. Create it once, then paste the id here:
+#   npx wrangler kv namespace create ROSTER
+kv_namespaces = [
+  { binding = "ROSTER", id = "d620173d38e64bb9be2ce4a0643f747d" }
+]
+
+[vars]
+# Your Discord application's PUBLIC KEY (Dev Portal → General Information). Not a
+# secret — it only verifies inbound request signatures.
+DISCORD_PUBLIC_KEY = "dc720a3c014be705579bfea87a40a5408a95bccb799a3b0b916aa6bcf9768083"
+
+# Where /standings points.
+SITE_URL = "https://calculabs.github.io/algotraderz-bot-challenge/"
+
+# Comma-separated Discord user ids allowed to run /remove (e.g. "111,222").
+# Turn on Discord Developer Mode, right-click yourself → Copy User ID.
+ADMIN_IDS = "512516249507463169, 813975359485116456"
+
+# No bot token is needed by the Worker itself — it verifies signatures and replies
+# inline. The token is only used by register.js, run locally.

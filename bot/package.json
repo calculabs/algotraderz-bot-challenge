@@ -1,0 +1,15 @@
+{
+  "name": "algotraderz-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Discord slash-command bot (Cloudflare Worker) that owns the weekly bot-challenge roster.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "register": "node src/register.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.110.0"
+  }
+}

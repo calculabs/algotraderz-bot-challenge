@@ -204,8 +204,13 @@
     .divider { height: 1px; background: var(--card-border); margin: 18px 0; }
     .tools-summary { cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 600; letter-spacing: .02em; }
     .tools-summary:hover { color: var(--ink); }
-    .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 50; background: #162034; border: 1px solid var(--card-border); color: var(--ink); padding: 10px 16px; border-radius: 10px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; }
-    .toast.show { opacity: 1; }
+    /* Discord command list in the Manage panel */
+    .cmds { display: grid; gap: 8px; margin: 14px 0 16px; }
+    .cmd { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; background: rgba(255,255,255,.03); border: 1px solid var(--card-border); border-radius: 10px; padding: 10px 12px; }
+    .cmd code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; color: var(--ink); font-weight: 600; white-space: nowrap; }
+    .cmd code .arg { color: var(--muted); font-weight: 500; }
+    .cmd-h { color: var(--muted-dim); font-size: 11.5px; text-align: right; }
+    a.btn.primary.linkbtn { display: block; text-align: center; text-decoration: none; }
 
     /* Phones: shrink the 3-up podium so it never overflows a narrow screen. */
     @media (max-width: 560px) {
@@ -314,13 +319,12 @@
   <div class="overlay" id="overlay">
     <div class="panel" id="panel"></div>
   </div>
-  <div class="toast" id="toast"></div>
 
   <script type="module">
     import { fetchWeeklyStats, parseAccountId } from "./src/topstep-api.mjs";
     import { resolveWeek } from "./src/calendar.mjs";
     import { computeMetrics, buildRow, rankByScope, challengeInfo } from "./src/leaderboard.mjs";
-    import { FIREBASE_CONFIG, fetchFirestoreRoster, mergeRoster } from "./src/firebase.mjs";
+    import { fetchBotRoster, mergeRoster, DISCORD_INVITE } from "./src/roster.mjs";
 
     const $ = (id) => document.getElementById(id);
 
@@ -632,7 +636,7 @@
     }
     const showEmpty = (msg) => { $("app").innerHTML = `<div class="empty">${msg || "No standings yet."}</div>`; };
 
-    /* ---------- roster: participants.json (seed) + Firestore (self-serve) ---------- */
+    /* ---------- roster: participants.json (seed) + Discord bot (self-serve) ---------- */
     let CONFIG = { challenge: {}, participants: [] };
 
     async function loadRoster() {
@@ -646,7 +650,7 @@
           base = Array.isArray(j) ? j : j.participants ?? [];
         }
       } catch {}
-      const extra = await fetchFirestoreRoster();
+      const extra = await fetchBotRoster(); // players who ran /join in Discord
       return { challenge, participants: mergeRoster(base, extra) };
     }
 
@@ -681,150 +685,44 @@
         draw();
       } catch (e) {
         try { DATA = await (await fetch("./data/leaderboard.json", { cache: "no-store" })).json(); draw(); }
-        catch { showEmpty("No standings yet. Add yourself with the ⚙ Manage button."); }
+        catch { showEmpty("No standings yet. Join in Discord with <code>/join</code> — see the ⚙ Manage button."); }
       }
     }
 
-    /* ---------- manage panel ---------- */
-    const toast = (msg) => { const t = $("toast"); t.textContent = msg; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 1600); };
-    const FS = `https://firestore.googleapis.com/v1/projects/${FIREBASE_CONFIG.projectId}/databases/(default)/documents`;
-
-    // Stable anonymous identity per browser (no login). Reuses the stored refresh
-    // token so re-visits keep the same uid → can edit their own entry / stay organizer.
-    async function fbAuth() {
-      const key = FIREBASE_CONFIG.apiKey;
-      let saved = null;
-      try { saved = JSON.parse(localStorage.getItem("fbAnon") || "null"); } catch {}
-      if (saved?.refreshToken) {
-        const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${key}`, {
-          method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
-          body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(saved.refreshToken)}`
-        });
-        if (r.ok) { const j = await r.json(); return { idToken: j.id_token, uid: j.user_id }; }
-      }
-      const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${key}`, {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ returnSecureToken: true })
-      });
-      if (!r.ok) throw new Error("auth failed (" + r.status + ") — is Anonymous sign-in enabled?");
-      const j = await r.json();
-      try { localStorage.setItem("fbAnon", JSON.stringify({ refreshToken: j.refreshToken, uid: j.localId })); } catch {}
-      return { idToken: j.idToken, uid: j.localId };
-    }
-
-    const ADMIN = { me: null, owner: "" };
-    const isAdmin = () => !!ADMIN.me && ADMIN.me === ADMIN.owner;
-
-    async function fbOwnerUid() {
-      try { const r = await fetch(`${FS}/admin/owner`); if (!r.ok) return ""; const j = await r.json(); return j.fields?.uid?.stringValue || ""; } catch { return ""; }
-    }
-    async function loadAdmin() {
-      ADMIN.owner = await fbOwnerUid();
-      let saved = null;
-      try { saved = JSON.parse(localStorage.getItem("fbAnon") || "null"); } catch {}
-      // Only resolve an identity for people who've already acted (don't mint anon
-      // users just for opening the panel).
-      if (saved?.refreshToken || saved?.uid) {
-        try { ADMIN.me = (await fbAuth()).uid; } catch { ADMIN.me = saved?.uid || null; }
-      } else {
-        ADMIN.me = null;
-      }
-    }
-
-    async function firestoreWrite(name, url) {
-      const { idToken, uid } = await fbAuth();
-      const res = await fetch(`${FS}/roster/${uid}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json", authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ fields: { name: { stringValue: name }, url: { stringValue: url }, updatedAt: { timestampValue: new Date().toISOString() } } })
-      });
-      if (!res.ok) throw new Error("write failed (" + res.status + ")");
-    }
-
-    async function claimOrganizer() {
-      try {
-        const { idToken, uid } = await fbAuth();
-        const res = await fetch(`${FS}/admin/owner`, {
-          method: "PATCH", headers: { "content-type": "application/json", authorization: `Bearer ${idToken}` },
-          body: JSON.stringify({ fields: { uid: { stringValue: uid } } })
-        });
-        if (!res.ok) { ADMIN.owner = await fbOwnerUid(); toast("Organizer already claimed"); renderPanel(); return; }
-        ADMIN.me = uid; ADMIN.owner = uid; toast("You're the organizer ✓"); renderPanel();
-      } catch (e) { toast(String(e.message || "Couldn't claim")); }
-    }
-
-    async function deleteEntry(id) {
-      try {
-        const { idToken } = await fbAuth();
-        const res = await fetch(`${FS}/roster/${id}`, { method: "DELETE", headers: { authorization: `Bearer ${idToken}` } });
-        if (!res.ok) { toast("Delete failed (" + res.status + ")"); return; }
-        toast("Removed");
-        await refresh(); renderPanel();
-      } catch (e) { toast(String(e.message || "Delete failed")); }
-    }
-
+    /* ---------- manage panel (read-only; managing your link happens in Discord) ---------- */
     function renderPanel() {
       const ps = CONFIG.participants || [];
-      const admin = isAdmin();
       const rosterHtml = ps.length ? ps.map((p) => {
         const acc = parseAccountId(p.accountId ?? p.share ?? p.url);
-        const canDelete = p.id && (admin || p.id === ADMIN.me);
         return `<div class="rrow">
           <span class="rn">${esc(p.name || p.discord || "—")}</span>
           <span class="rm">${acc != null ? "account " + acc : "no link"}</span>
-          ${canDelete ? `<button class="del" data-id="${esc(p.id)}" title="Remove">✕</button>` : ""}
         </div>`;
-      }).join("") : `<div class="hint">No one's joined yet — be first.</div>`;
-
-      const organizer = admin
-        ? `<p class="hint" style="margin:0;">✓ You're the organizer — remove any entry with the ✕. Title, rules and the seed roster live in <code>participants.json</code>.</p>`
-        : !ADMIN.owner
-        ? `<button class="btn" id="claimBtn" style="width:100%;">Claim organizer role</button><p class="hint" style="margin:8px 0 0;">One-time, from your own device — lets you remove any entry.</p>`
-        : `<p class="hint" style="margin:0;">Title, rules and the seed roster live in <code>participants.json</code> in the repo.</p>`;
+      }).join("") : `<div class="hint">No one's joined yet — be first with <code>/join</code>.</div>`;
 
       $("panel").innerHTML = `
         <button class="close" id="closeBtn">×</button>
-        <h2>Join the leaderboard</h2>
-        <p class="hint">Enter your Discord name + public TopstepX share link and add yourself — no login. Account size, P&amp;L and % return come from your share; submitting again updates your link.</p>
+        <h2>Manage your link in Discord</h2>
+        <p class="hint">Your entry is tied to your Discord account — no login, and it works from any device. In the server, just run:</p>
+        <div class="cmds">
+          <div class="cmd"><code>/join <span class="arg">&lt;your TopstepX share link&gt;</span></code><span class="cmd-h">join, or update your link</span></div>
+          <div class="cmd"><code>/link <span class="arg">&lt;new link&gt;</span></code><span class="cmd-h">swap accounts mid-week</span></div>
+          <div class="cmd"><code>/mylink</code><span class="cmd-h">see what's on file</span></div>
+          <div class="cmd"><code>/leave</code><span class="cmd-h">drop out</span></div>
+        </div>
+        <a class="btn primary linkbtn" href="${esc(DISCORD_INVITE)}" target="_blank" rel="noreferrer">Open Discord →</a>
+        <p class="hint" style="margin-top:14px;">Your account size, P&amp;L and % return are read live from your public share link — turn on <b>Share</b> on your TopstepX stats page so the bot can see it.</p>
 
-        <div class="roster">${rosterHtml}</div>
         <div class="divider"></div>
-
-        <div class="field"><label>Discord username</label><input type="text" id="fName" placeholder="e.g. ridingthewave" /></div>
-        <div class="field"><label>TopstepX share link</label><input type="text" id="fLink" placeholder="https://topstepx.com/share/stats?share=24801853" /></div>
-        <button class="btn primary" id="submitBtn">Add me to the leaderboard →</button>
-
-        <div class="divider"></div>
-        ${organizer}`;
+        <h2 style="font-size:16px; margin-bottom:10px;">On the board now · ${ps.length}</h2>
+        <div class="roster">${rosterHtml}</div>`;
 
       $("closeBtn").onclick = closePanel;
-      $("submitBtn").onclick = submitToBoard;
-      const claim = $("claimBtn"); if (claim) claim.onclick = claimOrganizer;
-      $("panel").querySelectorAll(".del").forEach((b) => (b.onclick = () => deleteEntry(b.dataset.id)));
     }
 
-    async function submitToBoard() {
-      const name = $("fName").value.trim();
-      const accountId = parseAccountId($("fLink").value.trim());
-      if (!name) { toast("Enter your Discord username"); return; }
-      if (accountId == null) { toast("Enter a valid TopstepX share link"); return; }
-      const btn = $("submitBtn");
-      btn.disabled = true; btn.textContent = "Adding…";
-      try {
-        await firestoreWrite(name, `https://topstepx.com/share/stats?share=${accountId}`);
-        toast("You're on the board 🎉");
-        await refresh(); renderPanel();
-      } catch (e) {
-        console.error(e);
-        toast(String(e.message || "Couldn't add you — try again"));
-        btn.disabled = false; btn.textContent = "Add me to the leaderboard →";
-      }
-    }
-
-    async function openPanel() {
+    function openPanel() {
       renderPanel();
       $("overlay").classList.add("open");
-      await loadAdmin();
-      renderPanel(); // re-render with organizer / delete affordances once resolved
     }
     const closePanel = () => $("overlay").classList.remove("open");
 
@@ -834,7 +732,7 @@
     /* ---------- init ---------- */
     let refreshTimer = null;
     async function init() {
-      await refresh(); // loads roster (participants.json + Firestore) and builds the board
+      await refresh(); // loads roster (participants.json + Discord bot) and builds the board
       // Keep the current (unfinished) day's P&L — and any new self-added players — in motion.
       if (refreshTimer) clearInterval(refreshTimer);
       refreshTimer = setInterval(refresh, 60000);

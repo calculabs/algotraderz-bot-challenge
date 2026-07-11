@@ -66,14 +66,15 @@ Edit `participants.json` (or use the ⚙ **Manage** button on the page):
 Each competitor is just a **name** (their Discord username) and a public share **url**
 (or `accountId`). Account size, P&L and % return are all pulled from the share.
 
-### Players add themselves (no login, no maintainer)
+### Players add themselves in Discord (no login, no maintainer)
 
-Competitors open the site's ⚙ **Manage** panel, enter their Discord name + share link, and
-hit **"Add me to the leaderboard"** — the entry is written to **Firestore** from the browser
-via anonymous auth (no sign-in, nothing to install). The board reads `participants.json`
-(seed) **merged with** the Firestore roster, so new players show up live. Re-submitting
-updates your own entry in place. `src/firebase.mjs` holds the (public-safe) config + REST
-reader; the Node scrape merges the same Firestore roster into the committed snapshot.
+Competitors run **`/join <TopstepX share link>`** in the Discord server. A small
+Cloudflare Worker bot ([`bot/`](bot/)) keys each entry to their Discord id and stores it,
+so managing a link works from any device with nothing to install — `/link` to update,
+`/mylink` to check, `/leave` to drop out. Both the live board and the Node scrape merge
+that roster over the `participants.json` seed via `src/roster.mjs` (set `ROSTER_ENDPOINT`
+to the deployed Worker's `/roster` URL). The site's ⚙ **Manage** panel just shows the
+commands + current roster. See [`bot/README.md`](bot/README.md) for setup.
 
 To pin a fixed competition window instead of the live week, add ISO `weekStart` / `weekEnd`
 to `challenge`. Override the account-size tiers with `challenge.accountSizes` if needed.
