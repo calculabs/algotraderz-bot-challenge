@@ -230,6 +230,81 @@
       .item .big { font-size: 18px; }
       .item .sub { font-size: 11.5px; }
     }
+
+    /* ---------- winner / celebration view ---------- */
+    .celebrate { position: relative; text-align: center; padding: 6px 0 4px; }
+    .celebrate .kicker { color: var(--gold); font-weight: 800; font-size: 13px; letter-spacing: .3em; text-transform: uppercase; margin-bottom: 8px; }
+    .celebrate .weeklabel { color: var(--muted); font-size: 12px; letter-spacing: .2em; text-transform: uppercase; font-weight: 600; margin-bottom: 22px; }
+
+    /* the "rotating thingy": a conic halo spins behind a floating trophy */
+    .trophy-stage { position: relative; width: 200px; height: 200px; margin: 0 auto 4px; display: grid; place-items: center; }
+    .trophy-halo {
+      position: absolute; inset: -18px; border-radius: 50%;
+      background: conic-gradient(from 0deg,
+        transparent 0 18deg, rgba(244,192,79,.55) 40deg, transparent 62deg,
+        transparent 92deg, rgba(255,224,138,.32) 112deg, transparent 138deg,
+        transparent 198deg, rgba(244,192,79,.48) 220deg, transparent 248deg,
+        transparent 318deg, rgba(255,224,138,.26) 340deg, transparent 360deg);
+      filter: blur(15px); animation: spin 7s linear infinite;
+    }
+    .trophy-rays {
+      position: absolute; inset: -6px; border-radius: 50%;
+      background: repeating-conic-gradient(from 0deg, rgba(244,192,79,.10) 0 6deg, transparent 6deg 18deg);
+      mask: radial-gradient(circle, transparent 34%, #000 42%, transparent 74%);
+      -webkit-mask: radial-gradient(circle, transparent 34%, #000 42%, transparent 74%);
+      animation: spin 26s linear infinite reverse;
+    }
+    .trophy-ring {
+      position: absolute; inset: 10px; border-radius: 50%;
+      background: radial-gradient(circle at 50% 42%, rgba(244,192,79,.22), transparent 62%);
+      box-shadow: inset 0 0 42px rgba(244,192,79,.28);
+    }
+    .trophy-emoji { position: relative; font-size: 98px; line-height: 1; filter: drop-shadow(0 12px 30px rgba(244,192,79,.5)); animation: trophy-float 3.6s ease-in-out infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes trophy-float { 0%,100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-9px) rotate(4deg); } }
+
+    .champ-block { display: block; text-decoration: none; color: inherit; -webkit-tap-highlight-color: transparent; }
+    .champ-name {
+      font-size: clamp(30px, 7vw, 46px); font-weight: 800; letter-spacing: -.02em; line-height: 1; margin: 8px 0 3px;
+      background: linear-gradient(180deg, #ffffff, #ffe08a 58%, #e6ab3e);
+      -webkit-background-clip: text; background-clip: text; color: transparent; overflow-wrap: anywhere;
+    }
+    .champ-block:hover .champ-name { filter: brightness(1.08); }
+    .champ-sub { color: var(--muted); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; margin-bottom: 18px; }
+
+    .champ-stats { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; margin: 0 auto 22px; }
+    .champ-stat { border: 1px solid rgba(244,192,79,.28); background: rgba(244,192,79,.06); border-radius: 16px; padding: 13px 22px; min-width: 130px; }
+    .champ-stat .cv { font-size: 26px; font-weight: 800; }
+    .champ-stat .ck { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; margin-top: 4px; }
+
+    .runnersup { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; max-width: 400px; margin: 0 auto 22px; }
+    .ru { border: 1px solid var(--card-border); background: var(--card); border-radius: 16px; padding: 13px 12px; text-align: center; text-decoration: none; color: inherit; }
+    .ru:hover { border-color: rgba(255,255,255,.2); }
+    .ru .ru-medal { font-size: 19px; }
+    .ru .ru-name { font-weight: 700; font-size: 14px; margin: 5px 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ru .ru-ret { font-weight: 800; font-size: 16px; }
+
+    .nextweek { color: var(--muted-dim); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; font-weight: 600; margin-bottom: 18px; }
+    .nextweek b { color: var(--ink); font-variant-numeric: tabular-nums; }
+    .see-standings { display: inline-block; border: 1px solid var(--card-border); background: rgba(255,255,255,.04); color: #b7c4d8; border-radius: 99px; padding: 10px 20px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; letter-spacing: .02em; }
+    .see-standings:hover { color: #fff; border-color: rgba(255,255,255,.22); }
+    .winner-return { display: flex; justify-content: center; margin: 0 0 18px; }
+
+    /* confetti burst (one-shot, cleared after it lands) */
+    .confetti { position: fixed; inset: 0; pointer-events: none; z-index: 5; overflow: hidden; }
+    .confetti i { position: absolute; top: -14px; width: 8px; height: 14px; opacity: .9; border-radius: 1px; animation: fall linear forwards; }
+    @keyframes fall { to { transform: translateY(112vh) rotate(720deg); opacity: .15; } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .trophy-halo, .trophy-rays, .trophy-emoji { animation: none; }
+      .confetti { display: none; }
+    }
+    @media (max-width: 560px) {
+      .trophy-stage { width: 150px; height: 150px; }
+      .trophy-emoji { font-size: 72px; }
+      .champ-stat { padding: 11px 16px; min-width: 108px; }
+      .champ-stat .cv { font-size: 22px; }
+    }
   </style>
 </head>
 <body>
@@ -278,6 +353,18 @@
     let DATA = null;      // full leaderboard object (rich rows + schedule)
     let SCOPE = "overall"; // "overall" | day number — the time window
     let METRIC = "pct";    // "pct" (% return) | "wpl" (week $) | "today" (today $)
+
+    // Between Friday's CME close and a few hours before Sunday's open, the board
+    // flips to a champion celebration. GRACE_MS is how far before the next open we
+    // stop celebrating and hand back to the (soon-to-reset) standings.
+    const GRACE_MS = 3 * 60 * 60 * 1000;
+    let SHOW_BOARD = false; // user clicked "View full standings" — bypass the winner view
+    let confettiFired = false;
+    // Preview override: ?winner=1 forces the celebration on, ?winner=0 forces it off.
+    const WINNER_OVERRIDE = (() => {
+      const p = new URLSearchParams(location.search).get("winner");
+      return p == null ? null : p === "1" || p === "true";
+    })();
 
     const daysOf = () => (DATA?.schedule?.days || []);
     const dayState = (n) => daysOf().find((d) => d.day === n)?.state;
@@ -401,8 +488,111 @@
       </div>`;
     }
 
+    // ---------- champion celebration (Fri close → ~Sun open) ----------
+    // Driven off the live CME clock (not the snapshot) so it self-activates even if
+    // the board is served from the fallback JSON. Returns { sched, open } while the
+    // window is open, else null.
+    function celebrationState() {
+      if (WINNER_OVERRIDE === false) return null;
+      let sched;
+      try { sched = resolveWeek(CONFIG.challenge || {}).schedule; } catch { return null; }
+      const open = new Date(sched.weekEnd).getTime();
+      const active = WINNER_OVERRIDE === true || (sched.phase === "done" && Date.now() < open - GRACE_MS);
+      return active ? { sched, open } : null;
+    }
+    // "Week of Jul 6 – Jul 10" from the session's Mon..Fri trade dates.
+    function weekRangeLabel(sched) {
+      const days = sched?.days || [];
+      if (!days.length) return "";
+      const fmt = (iso) => new Date(iso + "T12:00:00Z").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      return `Week of ${fmt(days[0].date)} – ${fmt(days[days.length - 1].date)}`;
+    }
+    function nextOpenLabel(open) {
+      const ms = open - Date.now();
+      if (ms <= 0) return "New week opening…";
+      const totalMin = Math.floor(ms / 60000);
+      const d = Math.floor(totalMin / 1440), h = Math.floor((totalMin % 1440) / 60), m = totalMin % 60;
+      const parts = d ? `${d}d ${h}h` : `${h}h ${m}m`;
+      return `Next week opens in <b>${parts}</b>`;
+    }
+
+    // One-shot confetti; cleared after the last piece lands so it can't linger.
+    function fireConfetti() {
+      if (confettiFired || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      confettiFired = true;
+      const colors = ["#f4c04f", "#ffe08a", "#7fa9ff", "#ffffff", "#34d399"];
+      const N = 90;
+      let html = "";
+      for (let i = 0; i < N; i++) {
+        const left = ((i * 61) % 100);
+        const color = colors[i % colors.length];
+        const delay = ((i * 53) % 2600) / 1000;
+        const dur = 3 + ((i * 17) % 2600) / 1000;
+        const w = 6 + (i % 4) * 2;
+        html += `<i style="left:${left}%;background:${color};width:${w}px;animation-duration:${dur}s;animation-delay:${delay}s"></i>`;
+      }
+      const wrap = document.createElement("div");
+      wrap.className = "confetti";
+      wrap.innerHTML = html;
+      document.body.appendChild(wrap);
+      setTimeout(() => wrap.remove(), 8500);
+    }
+
+    // Render the champion view. Winner = top non-breached account by % return
+    // (breached accounts are disqualified). Returns false if there's no valid
+    // winner, so draw() can fall back to the normal board.
+    function drawWinner(rows, celeb) {
+      const ch = DATA.challenge || {};
+      const ranked = rankByScope(rows, "overall", celeb.sched.currentDay ?? 0, "pct");
+      const survivors = ranked.filter((r) => !r.drawdown?.breached && Number.isFinite(Number(r.return_pct)));
+      const win = survivors[0];
+      if (!win) return false;
+      const runners = survivors.slice(1, 3);
+      const medal = ["🥈", "🥉"];
+      // Wrap in a link to the competitor's share page when we have one, else a plain
+      // div so the card styling always applies.
+      const wrap = (cls, url, inner) =>
+        url ? `<a class="${cls}" href="${esc(url)}" target="_blank" rel="noreferrer">${inner}</a>` : `<div class="${cls}">${inner}</div>`;
+
+      $("app").innerHTML = `
+        <header>
+          <div class="org">🤖 ${esc(ch.org || "Algo Traderz")}</div>
+          <h1>${esc((ch.title || "Bot Challenge")).toUpperCase()}</h1>
+        </header>
+        <section class="celebrate">
+          <div class="kicker">🏆 Champion of the Week</div>
+          <div class="weeklabel">${esc(weekRangeLabel(celeb.sched))}</div>
+          ${wrap("champ-block", win.url, `
+            <div class="trophy-stage">
+              <div class="trophy-halo"></div>
+              <div class="trophy-rays"></div>
+              <div class="trophy-ring"></div>
+              <div class="trophy-emoji">🏆</div>
+            </div>
+            <div class="champ-name">${esc(win.name)}</div>
+            <div class="champ-sub">${sizeShort(win.account_size)} account</div>`)}
+          <div class="champ-stats">
+            <div class="champ-stat"><div class="cv ${cls(win.return_pct)}">${pct(win.return_pct)}</div><div class="ck">Return</div></div>
+            <div class="champ-stat"><div class="cv ${cls(win.week_pnl)}">${money(win.week_pnl, { sign: true })}</div><div class="ck">Weekly P&L</div></div>
+          </div>
+          ${runners.length ? `<div class="runnersup">${runners.map((r, i) => wrap("ru", r.url, `
+            <div class="ru-medal">${medal[i]}</div>
+            <div class="ru-name">${esc(r.name)}</div>
+            <div class="ru-ret ${cls(r.return_pct)}">${pct(r.return_pct)}</div>`)).join("")}</div>` : ""}
+          <div class="nextweek">${nextOpenLabel(celeb.open)}</div>
+          <button class="see-standings" id="seeStandings">View full standings →</button>
+        </section>
+        <footer>Final standings · Week complete</footer>`;
+
+      $("seeStandings").onclick = () => { SHOW_BOARD = true; draw(); };
+      fireConfetti();
+      return true;
+    }
+
     function draw() {
       if (!DATA) return;
+      const celeb = celebrationState();
+      if (celeb && !SHOW_BOARD && drawWinner(DATA.rows || [], celeb)) return;
       const ch = DATA.challenge || {};
       const rows = rankByScope(DATA.rows || [], SCOPE, DATA.schedule?.currentDay ?? 0, METRIC);
       const podium = rows.slice(0, 3);
@@ -413,6 +603,9 @@
       const updated = DATA.generated_at
         ? new Date(DATA.generated_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
         : "";
+      // While the celebration window is open but the user has opted into the full
+      // board, offer a way back to the champion view.
+      const backBar = celeb ? `<div class="winner-return"><button class="see-standings" id="backWinner">🏆 Back to winner</button></div>` : "";
 
       $("app").innerHTML = `
         <header>
@@ -422,6 +615,7 @@
           ${tabsHtml()}
           <div class="progress-label">${esc(scopeSubtitle(rows))}</div>
         </header>
+        ${backBar}
         ${podium.length ? `<section class="podium">${order.map((r, i) => (r ? podCard(r, placeOf[i]) : `<div class="pod" style="visibility:hidden"></div>`)).join("")}</section>` : ""}
         ${rest.length ? `<section class="list">${rest.map(listItem).join("")}</section>` : ""}
         ${rules ? `<section class="rules">${rules}</section>` : ""}
@@ -434,6 +628,7 @@
       $("app").querySelectorAll("[data-metric]").forEach((b) => {
         b.onclick = () => { METRIC = b.dataset.metric; draw(); };
       });
+      const bw = $("backWinner"); if (bw) bw.onclick = () => { SHOW_BOARD = false; draw(); };
     }
     const showEmpty = (msg) => { $("app").innerHTML = `<div class="empty">${msg || "No standings yet."}</div>`; };
 
