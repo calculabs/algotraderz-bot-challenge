@@ -24,18 +24,18 @@ const commands = [
   { name: "mylink", description: "Show which account you're currently tracked on" },
   { name: "leave", description: "Remove yourself from the leaderboard" },
   { name: "leaderboard", description: "Get the link to the live leaderboard" },
+  // Organizer commands are visible to everyone: `default_member_permissions: "0"` would
+  // hide them from all non-Administrators, and the organizers are listed in ADMIN_IDS,
+  // not necessarily server admins. Access is enforced in the Worker (which is the real
+  // boundary anyway); anyone else who tries gets a private ⛔ refusal.
   {
     name: "remove",
     description: "(Organizer) Remove someone from the leaderboard",
-    options: [{ name: "user", description: "The competitor to remove", type: 6, required: true }],
-    // Hidden from everyone by default; a server admin can grant it per-role in
-    // Server Settings → Integrations. The Worker also re-checks ADMIN_IDS.
-    default_member_permissions: "0"
+    options: [{ name: "user", description: "The competitor to remove", type: 6, required: true }]
   },
   {
     name: "announce",
-    description: "(Organizer) Post the current champion to the announcements channel",
-    default_member_permissions: "0"
+    description: "(Organizer) Post the current champion to the announcements channel"
   }
 ];
 
