@@ -224,18 +224,28 @@ export function championEmbed(podium, env) {
   };
 }
 
-// Returns { ok, why } — `why` carries Discord's own error so a failed /announce can say
-// what's actually wrong instead of listing everything that might be.
+// Post the announcement. Two routes:
+//
+//   1. ANNOUNCE_WEBHOOK_URL (preferred) — a channel webhook. It carries its own authority,
+//      so it posts into PRIVATE channels the bot can't even see. #bot-challenge is private,
+//      which is why the bot-token route below returns 50001 there.
+//   2. DISCORD_BOT_TOKEN + ANNOUNCE_CHANNEL_ID — needs View Channel + Send Messages +
+//      Embed Links granted to the bot on the target channel.
+//
+// Returns { ok, why }; `why` carries Discord's own error so a failed /announce says what's
+// actually wrong instead of listing everything that might be.
 async function postToChannel(env, payload) {
-  if (!env.DISCORD_BOT_TOKEN) return { ok: false, why: "the `DISCORD_BOT_TOKEN` secret isn't set on the Worker" };
-  if (!env.ANNOUNCE_CHANNEL_ID) return { ok: false, why: "`ANNOUNCE_CHANNEL_ID` is blank in `wrangler.toml`" };
+  const webhook = (env.ANNOUNCE_WEBHOOK_URL || "").trim();
+  if (!webhook && !env.DISCORD_BOT_TOKEN) return { ok: false, why: "neither `ANNOUNCE_WEBHOOK_URL` nor `DISCORD_BOT_TOKEN` is set on the Worker" };
+  if (!webhook && !env.ANNOUNCE_CHANNEL_ID) return { ok: false, why: "`ANNOUNCE_CHANNEL_ID` is blank in `wrangler.toml`" };
+  const url = webhook
+    ? `${webhook}?wait=true` // ?wait=true so Discord reports failures instead of a blind 204
+    : `https://discord.com/api/v10/channels/${env.ANNOUNCE_CHANNEL_ID}/messages`;
+  const headers = { "content-type": "application/json" };
+  if (!webhook) headers.authorization = `Bot ${env.DISCORD_BOT_TOKEN}`;
   let res;
   try {
-    res = await fetch(`https://discord.com/api/v10/channels/${env.ANNOUNCE_CHANNEL_ID}/messages`, {
-      method: "POST",
-      headers: { authorization: `Bot ${env.DISCORD_BOT_TOKEN}`, "content-type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    res = await fetch(url, { method: "POST", headers, body: JSON.stringify(payload) });
   } catch (e) {
     return { ok: false, why: `the request to Discord failed (${e.message})` };
   }
@@ -248,10 +258,16 @@ async function postToChannel(env, payload) {
     code = j.code ?? null;
     message = j.message ?? message;
   } catch {}
+  if (webhook) {
+    const why = res.status === 401 || res.status === 404
+      ? "that webhook URL is invalid or was deleted — recreate it and re-run `wrangler secret put ANNOUNCE_WEBHOOK_URL`"
+      : `the webhook returned ${res.status}${code ? ` (code ${code})` : ""}: ${message}`;
+    return { ok: false, why };
+  }
   // The codes we can actually act on; anything else falls through verbatim.
   const known = {
     10003: "that channel id doesn't exist, or the bot can't see the channel (needs **View Channel**)",
-    50001: "the bot has no access to that channel — it needs **View Channel** there",
+    50001: "the bot has no access to that channel — it needs **View Channel** there. That channel is private; a webhook (`ANNOUNCE_WEBHOOK_URL`) avoids needing the permission at all",
     50013: "the bot is missing **Send Messages** in that channel",
     40001: "Discord refused the request as unauthorized — the `DISCORD_BOT_TOKEN` is likely stale (reset?)"
   };
