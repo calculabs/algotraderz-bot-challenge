@@ -18,6 +18,14 @@ const TZ = "America/Los_Angeles";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEKDAY = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 
+// The board rolls over to the new week 2h BEFORE the 3pm open — i.e. Sunday 1pm PT — so
+// traders waiting for the open see a zeroed board for the week they're about to trade
+// rather than last week's finished results. This only moves the ROLLOVER: the week itself
+// still opens at 3pm, so day boundaries, the 2-3pm maintenance break and Friday's 2pm
+// close are all unchanged. Nothing trades in the gap, so no P&L can be missed.
+// The pre-open window reports phase "pre" with currentDay 0.
+const ROLLOVER_LEAD_MS = 2 * 60 * 60 * 1000;
+
 function ptParts(date) {
   const p = new Intl.DateTimeFormat("en-US", {
     timeZone: TZ, hour12: false, weekday: "short",
@@ -48,7 +56,8 @@ export function weekSchedule(now = new Date()) {
   // UTC instant of "today's PT calendar date at 15:00 PT", then step back to Sunday.
   const today3pm = Date.UTC(p.year, p.month - 1, p.day, 15, 0, 0) - offset;
   let weekOpen = today3pm - p.weekday * DAY_MS;
-  if (now.getTime() < weekOpen) weekOpen -= 7 * DAY_MS; // before Sunday 3pm -> previous week
+  // Stay on the previous week until the rollover (Sunday 1pm PT), not until the open.
+  if (now.getTime() < weekOpen - ROLLOVER_LEAD_MS) weekOpen -= 7 * DAY_MS;
 
   const totalDays = 5;
   const closeMs = weekOpen + 4 * DAY_MS + 23 * 60 * 60 * 1000; // Fri 2pm

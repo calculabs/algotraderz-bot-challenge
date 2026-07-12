@@ -363,10 +363,11 @@
     let SCOPE = "overall"; // "overall" | day number — the time window
     let METRIC = "pct";    // "pct" (% return) | "wpl" (week $) | "today" (today $)
 
-    // Between Friday's CME close and a few hours before Sunday's open, the board
-    // flips to a champion celebration. GRACE_MS is how far before the next open we
-    // stop celebrating and hand back to the (soon-to-reset) standings.
-    const GRACE_MS = 3 * 60 * 60 * 1000;
+    // Between Friday's CME close and Sunday's rollover, the board flips to a champion
+    // celebration. GRACE_MS is how far before the next open we stop celebrating; it matches
+    // the calendar's 2h rollover lead, so the trophy hands straight off to the zeroed board
+    // for the new week (no window where last week's standings reappear).
+    const GRACE_MS = 2 * 60 * 60 * 1000;
     let SHOW_BOARD = false; // user clicked "View full standings" — bypass the winner view
     let confettiFired = false;
     // Preview override: ?winner=1 forces the celebration on, ?winner=0 forces it off.
@@ -610,18 +611,25 @@
       const rest = rows.slice(3);
       const order = [podium[2], podium[0], podium[1]];
       const placeOf = [3, 1, 2];
-      // Champion-eligible = actually competed this week (non-breached AND traded). When
-      // nobody qualifies during the completed-week window (e.g. a reset weekend where the
-      // only entrants just joined with no data), show the invite/wait card instead of a
-      // hollow 0.00% podium.
+      // Nobody has actually competed yet (non-breached AND traded) => no podium. A field of
+      // 0.00% rows must never be ranked into a gold/silver/bronze podium: that's a hollow
+      // winner. It happens on a reset weekend, and every week from the Sunday 1pm rollover
+      // until the first trades land. Show a card that says where we are instead.
       const eligible = rows.filter((r) => !r.drawdown?.breached && (r.days_traded ?? 0) > 0 && Number.isFinite(Number(r.return_pct)));
-      const showInvite = rows.length === 0 || (!!celeb && eligible.length === 0);
+      const showInvite = rows.length === 0 || eligible.length === 0;
+      const preOpen = DATA.schedule?.phase === "pre";
+      const card = rows.length === 0
+        ? { emoji: "🤖", title: "No bots on the board yet",
+            sub: "Be the first — run <code>/join &lt;your TopstepX share link&gt;</code> in Discord." }
+        : preOpen
+          ? { emoji: "🏁", title: "New week — everyone starts at zero",
+              sub: "The board is reset and the field is set. Trading opens at the CME open; results appear once the session gets going. Not in yet? <code>/join</code>." }
+          : { emoji: "🏁", title: "No results in yet",
+              sub: "The week is live — standings fill in as trades land. Lock in your account with <code>/join</code>." };
       const inviteCard = `<section class="empty-board">
-          <div class="eb-emoji">${rows.length ? "🏁" : "🤖"}</div>
-          <div class="eb-title">${rows.length ? "No results in yet" : "No bots on the board yet"}</div>
-          <div class="eb-sub">${rows.length
-            ? "The board resets each week — a new week opens soon. Lock in your account with <code>/join</code>."
-            : "Be the first — run <code>/join &lt;your TopstepX share link&gt;</code> in Discord."}</div>
+          <div class="eb-emoji">${card.emoji}</div>
+          <div class="eb-title">${card.title}</div>
+          <div class="eb-sub">${card.sub}</div>
           <a class="btn primary linkbtn" href="${esc(DISCORD_INVITE)}" target="_blank" rel="noreferrer" style="max-width:260px;margin:18px auto 0;">Open Discord →</a>
         </section>`;
       const rules = (ch.rules || []).map((r, i) => `<div class="chip${i > 0 ? " warn" : ""}">${esc(r)}</div>`).join("");
