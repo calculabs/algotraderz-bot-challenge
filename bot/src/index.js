@@ -7,7 +7,7 @@
 //   GET  /roster   public JSON the leaderboard site reads (CORS: *)
 //
 // The roster lives in a KV namespace (binding ROSTER), one key per competitor:
-//   user:<discordId> -> { discordId, name, url, accountId, updatedAt }
+//   user:<discordId> -> { discordId, name, url, accountId, joinedAt, updatedAt }
 //
 // The Worker needs no bot token (it only verifies request signatures with the app's
 // public key and replies inline). The token is used solely by register.js, run once
@@ -126,7 +126,18 @@ async function upsertLink(interaction, env, { updating }) {
       ? "🔒 You can't swap accounts mid-week. Account changes reopen after **Friday's close**, before **Sunday's open**."
       : "🔒 Joining is closed while the week is live. Come back after **Friday's close** to enter.");
   }
-  const entry = { discordId: u.id, name: displayName(u), url: shareUrl(accountId), accountId, updatedAt: new Date().toISOString() };
+  // joinedAt is when this person FIRST entered, and it survives link swaps — the board uses
+  // it to decide which week they belong to, so an /link update must not move it forward
+  // (that would silently eject them from the week they're already competing in).
+  const now = new Date().toISOString();
+  const entry = {
+    discordId: u.id,
+    name: displayName(u),
+    url: shareUrl(accountId),
+    accountId,
+    joinedAt: existing?.joinedAt ?? now,
+    updatedAt: now
+  };
   await env.ROSTER.put(rosterKey(u.id), JSON.stringify(entry));
   const shared = await isShared(accountId);
   if (!shared) {

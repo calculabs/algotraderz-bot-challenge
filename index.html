@@ -329,7 +329,7 @@
     import { fetchWeeklyStats, parseAccountId } from "./src/topstep-api.mjs";
     import { resolveWeek } from "./src/calendar.mjs";
     import { computeMetrics, buildRow, rankByScope, challengeInfo } from "./src/leaderboard.mjs";
-    import { fetchBotRoster, mergeRoster, DISCORD_INVITE } from "./src/roster.mjs";
+    import { fetchBotRoster, mergeRoster, eligibleForWeek, DISCORD_INVITE } from "./src/roster.mjs";
 
     const $ = (id) => document.getElementById(id);
 
@@ -688,7 +688,10 @@
     async function buildLive(config) {
       const ch = config.challenge || {};
       const { schedule, range } = resolveWeek(ch);
-      const rows = (await Promise.all((config.participants || []).map(async (p) => {
+      // Scored field = those on the roster before this week closed. The Join panel still
+      // lists everyone, so a weekend joiner sees themselves on the roster while sitting out
+      // the week that already ended.
+      const rows = (await Promise.all(eligibleForWeek(config.participants || [], schedule).map(async (p) => {
         const accountId = parseAccountId(p.accountId ?? p.share ?? p.url);
         if (accountId == null) return null;
         try {

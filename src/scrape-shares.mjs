@@ -3,7 +3,7 @@ import path from "path";
 import { fetchAccountStats, parseAccountId } from "./topstep-api.mjs";
 import { resolveWeek } from "./calendar.mjs";
 import { computeMetrics, buildRow, rankByScope, challengeInfo, toCsv } from "./leaderboard.mjs";
-import { fetchBotRoster, mergeRoster } from "./roster.mjs";
+import { fetchBotRoster, mergeRoster, eligibleForWeek } from "./roster.mjs";
 
 const configPath = process.argv[2] || "participants.json";
 if (!fs.existsSync(configPath)) {
@@ -15,11 +15,16 @@ const raw = JSON.parse(fs.readFileSync(configPath, "utf8"));
 const challenge = Array.isArray(raw) ? {} : raw.challenge ?? {};
 const seed = Array.isArray(raw) ? raw : raw.participants ?? [];
 // Merge the committed seed roster with self-serve entries from the Discord bot.
-const participants = mergeRoster(seed, await fetchBotRoster());
+const roster = mergeRoster(seed, await fetchBotRoster());
 
 const now = new Date();
 // Competition week can be pinned in config; otherwise use the live futures week.
 const { schedule, range } = resolveWeek(challenge, now);
+
+// Only those who were on the roster before this week closed (see eligibleForWeek).
+const participants = eligibleForWeek(roster, schedule);
+const excluded = roster.length - participants.length;
+if (excluded > 0) console.log(`Excluded ${excluded} competitor(s) who joined after this week's close — they compete next week.`);
 
 fs.mkdirSync("data", { recursive: true });
 const rawDir = path.join("data", "raw");
