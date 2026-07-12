@@ -13,7 +13,7 @@ kv_namespaces = [
 # secret — it only verifies inbound request signatures.
 DISCORD_PUBLIC_KEY = "dc720a3c014be705579bfea87a40a5408a95bccb799a3b0b916aa6bcf9768083"
 
-# Where /standings points.
+# Where /leaderboard points.
 SITE_URL = "https://calculabs.github.io/algotraderz-bot-challenge/"
 
 # Comma-separated Discord user ids allowed to run /remove (e.g. "111,222").

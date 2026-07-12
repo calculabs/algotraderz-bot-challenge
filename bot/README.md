@@ -18,12 +18,12 @@ Traders manage themselves in the server:
 | `/link <share link>` | Swap your account (weekend only) |
 | `/mylink` | Show what's on file for you |
 | `/leave` | Drop out |
-| `/standings` | Link to the live board |
+| `/leaderboard` | Link to the live board |
 | `/remove <user>` | **Organizer only** — prune someone |
 
 All replies are **ephemeral** (only the person running the command sees them), so the channel stays clean.
 
-**Swaps lock during the live week.** Once the trading week is live (Sun open → Fri close), you can't switch to a different account — `/link` (or a re-`/join` with a new account) replies with a 🔒 notice until the weekend break. Changes reopen after Friday's CME close. **Brand-new late joins stay open** by default (friendly to stragglers); set `LOCK_JOIN = "true"` in `wrangler.toml` to close those during the week too. `/leave`, `/mylink`, and `/standings` work anytime.
+**Swaps lock during the live week.** Once the trading week is live (Sun open → Fri close), you can't switch to a different account — `/link` (or a re-`/join` with a new account) replies with a 🔒 notice until the weekend break. Changes reopen after Friday's CME close. **Brand-new late joins stay open** by default (friendly to stragglers); set `LOCK_JOIN = "true"` in `wrangler.toml` to close those during the week too. `/leave`, `/mylink`, and `/leaderboard` work anytime.
 
 ---
 

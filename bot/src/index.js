@@ -156,9 +156,9 @@ const COMMANDS = {
     return reply(existed ? "👋 Removed you from the board. Come back anytime with `/join`." : "You weren't on the board.");
   },
 
-  standings(interaction, env) {
+  leaderboard(interaction, env) {
     const site = env.SITE_URL || "https://calculabs.github.io/algotraderz-bot-challenge/";
-    return reply(`🏆 Live standings: ${site}`);
+    return reply(`🏆 Live leaderboard: ${site}`);
   },
 
   // Organizer-only: prune anyone (duplicates, no-shows, people who left the server).

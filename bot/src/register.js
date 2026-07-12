@@ -23,7 +23,7 @@ const commands = [
   { name: "link", description: "Update your TopstepX share link", options: [linkOption] },
   { name: "mylink", description: "Show which account you're currently tracked on" },
   { name: "leave", description: "Remove yourself from the leaderboard" },
-  { name: "standings", description: "Get the link to the live leaderboard" },
+  { name: "leaderboard", description: "Get the link to the live leaderboard" },
   {
     name: "remove",
     description: "(Organizer) Remove someone from the leaderboard",
