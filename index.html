@@ -146,6 +146,10 @@
     .item .big { flex: none; text-align: right; font-weight: 800; font-size: 20px; white-space: nowrap; }
     .item.elim { opacity: .62; }
     .item.elim .num { background: rgba(247,112,102,.10); color: var(--red); font-size: 18px; }
+    /* Yet to trade: on the board, but not a result. Reads as waiting, not as a score. */
+    .item.idle { opacity: .55; }
+    .item.idle .num { background: rgba(255,255,255,.03); font-size: 18px; }
+    .item .big.idle { color: var(--muted-dim); font-weight: 700; }
 
     /* drawdown cushion — room to the trailing end-of-day max-loss limit */
     .dd { margin-top: 12px; }
@@ -462,17 +466,22 @@
     }
     const listItem = (row) => {
       const breached = !!row.drawdown?.breached;
-      const big =
-        METRIC === "wpl" ? `<div class="big ${cls(row.week_pnl)}">${money(row.week_pnl, { sign: true })}</div>`
+      // No trades in this window: show "—", not a 0.00% that reads like a result.
+      const idle = !row.traded && !breached;
+      const big = idle ? `<div class="big idle">—</div>`
+        : METRIC === "wpl" ? `<div class="big ${cls(row.week_pnl)}">${money(row.week_pnl, { sign: true })}</div>`
         : METRIC === "today" ? `<div class="big ${cls(row.today_pnl)}">${money(row.today_pnl, { sign: true })}</div>`
         : `<div class="big ${cls(row.return_pct)}">${pct(row.return_pct)}</div>`;
       const tag = breached ? `<span class="tag">BREACHED${ddDay(row.drawdown) ? " · " + ddDay(row.drawdown) : ""}</span>` : "";
+      const sub = idle
+        ? `Hasn't traded ${SCOPE === "overall" ? "this week" : "this day"} yet`
+        : `Wk <span class="${cls(row.week_pnl)}">${money(row.week_pnl, { sign: true })}</span> · Today <span class="${cls(row.today_pnl)}">${money(row.today_pnl, { sign: true })}</span>${ddCushionSub(row.drawdown)}`;
       return linked(`
-      <div class="item${breached ? " elim" : ""}">
-        <div class="num">${row.rank}</div>
+      <div class="item${breached ? " elim" : ""}${idle ? " idle" : ""}">
+        <div class="num">${idle ? "·" : row.rank}</div>
         <div class="main">
           <div class="who"><span class="nm">${esc(row.name)}</span>${tag}</div>
-          <div class="sub">Wk <span class="${cls(row.week_pnl)}">${money(row.week_pnl, { sign: true })}</span> · Today <span class="${cls(row.today_pnl)}">${money(row.today_pnl, { sign: true })}</span>${ddCushionSub(row.drawdown)}</div>
+          <div class="sub">${sub}</div>
         </div>
         ${big}
       </div>`, row.url);
@@ -607,8 +616,13 @@
       if (celeb && !SHOW_BOARD && drawWinner(DATA.rows || [], celeb)) return;
       const ch = DATA.challenge || {};
       const rows = rankByScope(DATA.rows || [], SCOPE, DATA.schedule?.currentDay ?? 0, METRIC);
-      const podium = rows.slice(0, 3);
-      const rest = rows.slice(3);
+      // Only people who actually competed can hold a podium spot. Ranking already sinks
+      // the not-started accounts, but with a thin field they'd still fill the top 3 — a
+      // trophy and a LEADING pill on an account that hasn't placed a trade.
+      const contenders = rows.filter((r) => r.traded && !r.drawdown?.breached);
+      const podium = contenders.slice(0, 3);
+      const onPodium = new Set(podium.map((r) => r.name));
+      const rest = rows.filter((r) => !onPodium.has(r.name));
       const order = [podium[2], podium[0], podium[1]];
       const placeOf = [3, 1, 2];
       // Nobody has actually competed yet (non-breached AND traded) => no podium. A field of

@@ -1,18 +1,18 @@
 {
-  "generated_at": "2026-07-12T20:36:11.922Z",
+  "generated_at": "2026-07-12T22:21:38.084Z",
   "week": {
     "start": "2026-07-12T22:00:00.000Z",
     "end": "2026-07-19T22:00:00.000Z"
   },
   "schedule": {
-    "currentDay": 0,
+    "currentDay": 1,
     "totalDays": 5,
-    "phase": "pre",
+    "phase": "active",
     "days": [
       {
         "day": 1,
         "date": "2026-07-13",
-        "state": "future"
+        "state": "live"
       },
       {
         "day": 2,
@@ -75,7 +75,7 @@
           "day": 1,
           "date": "2026-07-13",
           "traded": false,
-          "live": false,
+          "live": true,
           "pnl": 0,
           "return_pct": 0,
           "trades": 0,
@@ -136,33 +136,33 @@
       "shared": true,
       "error": null,
       "account_size": 150000,
-      "balance": null,
-      "days_traded": 0,
+      "balance": 149458.92,
+      "days_traded": 1,
       "drawdown": {
         "mll": 4500,
         "threshold": 145500,
-        "balance": 150000,
-        "cushion": 4500,
+        "balance": 149458.92,
+        "cushion": 3958.92,
         "breached": false,
         "breach_date": null
       },
       "overall": {
-        "pnl": 0,
-        "return_pct": 0,
-        "trades": 0,
-        "balance": null
+        "pnl": -541.08,
+        "return_pct": -0.3607,
+        "trades": 12,
+        "balance": 149458.92
       },
       "days": {
         "1": {
           "day": 1,
           "date": "2026-07-13",
-          "traded": false,
-          "live": false,
-          "pnl": 0,
-          "return_pct": 0,
-          "trades": 0,
-          "win_rate": null,
-          "balance": null
+          "traded": true,
+          "live": true,
+          "pnl": -541.08,
+          "return_pct": -0.3607,
+          "trades": 12,
+          "win_rate": 33.33,
+          "balance": 149458.92
         },
         "2": {
           "day": 2,
@@ -239,7 +239,7 @@
           "day": 1,
           "date": "2026-07-13",
           "traded": false,
-          "live": false,
+          "live": true,
           "pnl": 0,
           "return_pct": 0,
           "trades": 0,
@@ -321,7 +321,89 @@
           "day": 1,
           "date": "2026-07-13",
           "traded": false,
+          "live": true,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "2": {
+          "day": 2,
+          "date": "2026-07-14",
+          "traded": false,
           "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "3": {
+          "day": 3,
+          "date": "2026-07-15",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "4": {
+          "day": 4,
+          "date": "2026-07-16",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        },
+        "5": {
+          "day": 5,
+          "date": "2026-07-17",
+          "traded": false,
+          "live": false,
+          "pnl": 0,
+          "return_pct": 0,
+          "trades": 0,
+          "win_rate": null,
+          "balance": null
+        }
+      }
+    },
+    {
+      "name": "dr.feelgood0777",
+      "account_id": 24934992,
+      "url": "https://topstepx.com/share/stats?share=24934992",
+      "source": "live",
+      "shared": true,
+      "error": null,
+      "account_size": 150000,
+      "balance": null,
+      "days_traded": 0,
+      "drawdown": {
+        "mll": 4500,
+        "threshold": 145500,
+        "balance": 150000,
+        "cushion": 4500,
+        "breached": false,
+        "breach_date": null
+      },
+      "overall": {
+        "pnl": 0,
+        "return_pct": 0,
+        "trades": 0,
+        "balance": null
+      },
+      "days": {
+        "1": {
+          "day": 1,
+          "date": "2026-07-13",
+          "traded": false,
+          "live": true,
           "pnl": 0,
           "return_pct": 0,
           "trades": 0,
@@ -403,7 +485,7 @@
           "day": 1,
           "date": "2026-07-13",
           "traded": false,
-          "live": false,
+          "live": true,
           "pnl": 0,
           "return_pct": 0,
           "trades": 0,
@@ -485,7 +567,7 @@
           "day": 1,
           "date": "2026-07-13",
           "traded": false,
-          "live": false,
+          "live": true,
           "pnl": 0,
           "return_pct": 0,
           "trades": 0,
@@ -567,7 +649,7 @@
           "day": 1,
           "date": "2026-07-13",
           "traded": false,
-          "live": false,
+          "live": true,
           "pnl": 0,
           "return_pct": 0,
           "trades": 0,

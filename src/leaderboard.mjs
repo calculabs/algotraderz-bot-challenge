@@ -186,7 +186,10 @@ export function flattenScope(row, scope, currentDay = 0) {
     days_traded: row.days_traded ?? 0,
     pnl: scopeM ? scopeM.pnl : zero,
     return_pct: scopeM ? scopeM.return_pct : zero,
-    traded: scopeM ? scopeM.traded ?? true : false,
+    // Did they actually compete in the selected window? row.overall carries no `traded`
+    // flag, so for the overall scope derive it from days_traded — defaulting to true would
+    // mark someone who never placed a trade as a competitor.
+    traded: scope === "overall" ? (row.days_traded ?? 0) > 0 : !!(scopeM && scopeM.traded),
     week_pnl: row.overall?.pnl ?? zero,
     week_return: row.overall?.return_pct ?? zero,
     today_pnl: todayM ? todayM.pnl : zero,
@@ -199,13 +202,19 @@ export function flattenScope(row, scope, currentDay = 0) {
 //   "pct"   — % return on account size for the selected day/overall window (default)
 //   "wpl"   — week-to-date dollar P&L
 //   "today" — today's dollar P&L
-// Breached accounts are out of the competition (they become practice accounts), so
-// they always sort below every active account, ordered among themselves by metric.
+//
+// Rows sort in three tiers, because a raw metric sort ranks not-competing above competing:
+//   0  competing   — traded in this window, still alive
+//   1  not started — no trades in this window. Their 0.00% is the absence of a result, not
+//                    a good one; sorting on the metric alone would float them above anyone
+//                    down on the day and hand an untouched account the leader's spot.
+//   2  breached    — out of the competition (they become practice accounts), so always last
+// Within a tier, the metric decides.
 const METRIC_KEY = { pct: "return_pct", wpl: "week_pnl", today: "today_pnl" };
+const rankTier = (r) => (r.drawdown?.breached ? 2 : r.traded ? 0 : 1);
 export function rankRows(rows, metric = "pct") {
   const key = METRIC_KEY[metric] ?? "return_pct";
-  const out = (r) => (r.drawdown?.breached ? 1 : 0);
-  rows.sort((a, b) => out(a) - out(b) || (b[key] ?? -Infinity) - (a[key] ?? -Infinity));
+  rows.sort((a, b) => rankTier(a) - rankTier(b) || (b[key] ?? -Infinity) - (a[key] ?? -Infinity));
   rows.forEach((row, i) => (row.rank = i + 1));
   return rows;
 }
