@@ -66,12 +66,33 @@ async function isShared(accountId) {
 }
 
 // ---- KV roster ----
+//
+// user:<id> is the source of truth, but serving /roster by LISTing it and GETting each key
+// costs 1 + N KV ops per request. The board polls /roster from every open tab, and the free
+// tier allows only 1,000 LISTs a day — one person leaving the board open all day exhausts
+// it on their own. So /roster is served from a single denormalized key (1 GET, no LIST),
+// rebuilt on the rare mutations (join / link / leave / remove). ROSTER_ALL is a cache of
+// the user:* keys, never the source of truth: if it's missing we rebuild it from them.
 const rosterKey = (id) => `user:${id}`;
+const ROSTER_ALL = "roster:all";
 
-async function readRoster(env) {
+async function listRoster(env) {
   const list = await env.ROSTER.list({ prefix: "user:" });
   const entries = await Promise.all(list.keys.map((k) => env.ROSTER.get(k.name, "json")));
   return entries.filter(Boolean);
+}
+
+// Rebuild the denormalized key from the authoritative user:* keys. Called after a mutation.
+async function rebuildRoster(env) {
+  const entries = await listRoster(env);
+  await env.ROSTER.put(ROSTER_ALL, JSON.stringify(entries));
+  return entries;
+}
+
+async function readRoster(env) {
+  const cached = await env.ROSTER.get(ROSTER_ALL, "json");
+  if (Array.isArray(cached)) return cached;
+  return rebuildRoster(env); // cold start / first deploy
 }
 
 // ---- Discord request-signature verification (Ed25519 via Web Crypto) ----
@@ -142,6 +163,7 @@ async function upsertLink(interaction, env, { updating }) {
     updatedAt: now
   };
   await env.ROSTER.put(rosterKey(u.id), JSON.stringify(entry));
+  await rebuildRoster(env);
   const shared = await isShared(accountId);
   if (!shared) {
     return reply(`✅ ${updating ? "Updated" : "Added"} to account **${accountId}** — but I couldn't confirm public sharing is on. If you don't show up on the board within a minute, open your TopstepX stats page, turn on **Share**, and run \`/link\` again.`);
@@ -167,6 +189,7 @@ const COMMANDS = {
     const u = userOf(interaction);
     const existed = await env.ROSTER.get(rosterKey(u.id));
     await env.ROSTER.delete(rosterKey(u.id));
+    if (existed) await rebuildRoster(env);
     return reply(existed ? "👋 Removed you from the board. Come back anytime with `/join`." : "You weren't on the board.");
   },
 
@@ -183,6 +206,7 @@ const COMMANDS = {
     if (!targetId) return reply("Pick a competitor to remove.");
     const existed = await env.ROSTER.get(rosterKey(targetId));
     await env.ROSTER.delete(rosterKey(targetId));
+    if (existed) await rebuildRoster(env);
     return reply(existed ? `🗑️ Removed <@${targetId}> from the board.` : "That person wasn't on the board.");
   },
 
@@ -320,16 +344,26 @@ export default {
     ctx.waitUntil(announceChampion(env));
   },
 
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     // CORS preflight for the site's roster fetch.
     if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
 
-    // Public roster read for the leaderboard site.
+    // Public roster read for the leaderboard site. Served from the edge cache when warm, so
+    // a hundred open tabs cost one KV read a minute rather than one per poll. The roster
+    // only changes when someone runs /join, /link, /leave — a minute of staleness is fine,
+    // and the bot's own reply already confirms the change to the person who made it.
     if (request.method === "GET" && url.pathname === "/roster") {
+      const cache = caches.default;
+      const hit = await cache.match(request);
+      if (hit) return hit;
       const roster = await readRoster(env);
-      return new Response(JSON.stringify(roster), { headers: { ...JSON_HEADERS, ...CORS, "cache-control": "no-store" } });
+      const res = new Response(JSON.stringify(roster), {
+        headers: { ...JSON_HEADERS, ...CORS, "cache-control": "public, max-age=60, s-maxage=60" }
+      });
+      ctx.waitUntil(cache.put(request, res.clone()));
+      return res;
     }
 
     // Anything else that isn't a Discord interaction POST is just a health check.

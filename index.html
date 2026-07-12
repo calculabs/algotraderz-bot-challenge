@@ -724,9 +724,19 @@
       };
     }
 
+    // The board polls every 60s, but the roster only changes when someone runs /join or
+    // /leave. Re-fetching it every cycle billed a KV list + a read-per-user on every tick of
+    // every open tab, which burned through Cloudflare's free-tier KV quota. P&L is what
+    // moves minute to minute; a new competitor showing up within 5 minutes is plenty.
+    const ROSTER_TTL_MS = 5 * 60 * 1000;
+    let rosterAt = 0;
+
     async function refresh() {
       try {
-        CONFIG = await loadRoster(); // pick up newly self-added players each cycle
+        if (!rosterAt || Date.now() - rosterAt > ROSTER_TTL_MS) {
+          CONFIG = await loadRoster(); // pick up newly self-added players
+          rosterAt = Date.now();
+        }
         // An empty roster is a valid state now (fresh week, nobody's joined yet) — build
         // it live so the board shows the invite empty-state, not a stale snapshot.
         DATA = await buildLive(CONFIG);
