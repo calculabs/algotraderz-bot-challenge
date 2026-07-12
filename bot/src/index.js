@@ -180,9 +180,15 @@ const COMMANDS = {
     const podium = pickPodium((await fetchStandings(env))?.rows);
     if (!podium.length) return reply("Nothing to announce yet — no eligible (non-breached) accounts with results on the board.");
     const { ok, why } = await postToChannel(env, { embeds: [championEmbed(podium, env)] });
-    return reply(ok
-      ? `✅ Posted the champion (**${podium[0].name}**) to the announcements channel.`
-      : `⚠️ Couldn't post: ${why}.`);
+    if (!ok) return reply(`⚠️ Couldn't post: ${why}.`);
+    // If the week is already finished, this manual post IS the week's crowning — claim the
+    // marker so the hourly cron doesn't post a duplicate. Mid-week (a preview post), leave
+    // the marker alone so Friday's automatic announcement still fires.
+    const sched = weekSchedule(new Date());
+    const crowned = sched.phase === "done";
+    if (crowned) await env.ROSTER.put(announcedKey(sched), "1");
+    return reply(`✅ Posted the champion (**${podium[0].name}**) to the announcements channel.` +
+      (crowned ? " This week is now marked as announced, so the hourly cron won't repost it." : ""));
   }
 };
 
@@ -277,12 +283,17 @@ async function postToChannel(env, payload) {
   return { ok: false, why };
 }
 
+// The once-per-week idempotency key. Deliberately the DATE only: a full ISO timestamp is
+// hostage to any drift in how weekStart is computed, and the cron fires ~49 times between
+// Friday's close and Sunday's open — a key that fails to match means 49 champion posts.
+export const announcedKey = (sched) => `announced:${String(sched.weekStart).slice(0, 10)}`;
+
 // Once per week, after Friday's close, crown the champion. Idempotent: a KV marker per
 // week means repeated cron fires (or a redeploy) never double-post.
 async function announceChampion(env) {
   const sched = weekSchedule(new Date());
   if (sched.phase !== "done") return; // week still running (or pre-season)
-  const marker = `announced:${sched.weekStart}`;
+  const marker = announcedKey(sched);
   if (await env.ROSTER.get(marker)) return; // already crowned this week
   const podium = pickPodium((await fetchStandings(env))?.rows);
   if (!podium.length) { await env.ROSTER.put(marker, "1"); return; } // nobody to crown; don't retry

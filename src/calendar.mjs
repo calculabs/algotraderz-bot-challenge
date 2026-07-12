@@ -32,9 +32,14 @@ function ptParts(date) {
 }
 
 // Offset (ms) such that PT-wall-clock-as-UTC === realUTC + offset.
+// The PT parts only resolve to whole seconds, so compare against a whole-second instant:
+// subtracting the raw getTime() would fold the current millisecond into the offset, and
+// every timestamp derived from it (weekStart, weekEnd, close) would jitter by a few ms on
+// each call — which silently broke any key derived from them.
 function ptOffsetMs(date) {
   const p = ptParts(date);
-  return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - date.getTime();
+  const wholeSecond = Math.floor(date.getTime() / 1000) * 1000;
+  return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - wholeSecond;
 }
 
 export function weekSchedule(now = new Date()) {
