@@ -135,7 +135,10 @@ async function upsertLink(interaction, env, { updating }) {
     name: displayName(u),
     url: shareUrl(accountId),
     accountId,
-    joinedAt: existing?.joinedAt ?? now,
+    // Fall back to updatedAt for entries written before joinedAt existed: stamping `now`
+    // would date a long-standing competitor to today and drop them out of the week they
+    // already competed in. No KV backfill needed — this converges them on first write.
+    joinedAt: existing?.joinedAt ?? existing?.updatedAt ?? now,
     updatedAt: now
   };
   await env.ROSTER.put(rosterKey(u.id), JSON.stringify(entry));
