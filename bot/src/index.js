@@ -179,10 +179,10 @@ const COMMANDS = {
     if (!adminIds(env).includes(u.id)) return reply("⛔ Only the organizer can post announcements.");
     const podium = pickPodium((await fetchStandings(env))?.rows);
     if (!podium.length) return reply("Nothing to announce yet — no eligible (non-breached) accounts with results on the board.");
-    const ok = await postToChannel(env, { embeds: [championEmbed(podium, env)] });
+    const { ok, why } = await postToChannel(env, { embeds: [championEmbed(podium, env)] });
     return reply(ok
       ? `✅ Posted the champion (**${podium[0].name}**) to the announcements channel.`
-      : "⚠️ Couldn't post. Check: the `DISCORD_BOT_TOKEN` secret is set, `ANNOUNCE_CHANNEL_ID` is filled in, and I have **Send Messages** in that channel.");
+      : `⚠️ Couldn't post: ${why}.`);
   }
 };
 
@@ -224,14 +224,41 @@ export function championEmbed(podium, env) {
   };
 }
 
+// Returns { ok, why } — `why` carries Discord's own error so a failed /announce can say
+// what's actually wrong instead of listing everything that might be.
 async function postToChannel(env, payload) {
-  if (!env.ANNOUNCE_CHANNEL_ID || !env.DISCORD_BOT_TOKEN) return false;
-  const res = await fetch(`https://discord.com/api/v10/channels/${env.ANNOUNCE_CHANNEL_ID}/messages`, {
-    method: "POST",
-    headers: { authorization: `Bot ${env.DISCORD_BOT_TOKEN}`, "content-type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  return res.ok;
+  if (!env.DISCORD_BOT_TOKEN) return { ok: false, why: "the `DISCORD_BOT_TOKEN` secret isn't set on the Worker" };
+  if (!env.ANNOUNCE_CHANNEL_ID) return { ok: false, why: "`ANNOUNCE_CHANNEL_ID` is blank in `wrangler.toml`" };
+  let res;
+  try {
+    res = await fetch(`https://discord.com/api/v10/channels/${env.ANNOUNCE_CHANNEL_ID}/messages`, {
+      method: "POST",
+      headers: { authorization: `Bot ${env.DISCORD_BOT_TOKEN}`, "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+  } catch (e) {
+    return { ok: false, why: `the request to Discord failed (${e.message})` };
+  }
+  if (res.ok) return { ok: true };
+  const body = await res.text();
+  let code = null;
+  let message = body.slice(0, 140);
+  try {
+    const j = JSON.parse(body);
+    code = j.code ?? null;
+    message = j.message ?? message;
+  } catch {}
+  // The codes we can actually act on; anything else falls through verbatim.
+  const known = {
+    10003: "that channel id doesn't exist, or the bot can't see the channel (needs **View Channel**)",
+    50001: "the bot has no access to that channel — it needs **View Channel** there",
+    50013: "the bot is missing **Send Messages** in that channel",
+    40001: "Discord refused the request as unauthorized — the `DISCORD_BOT_TOKEN` is likely stale (reset?)"
+  };
+  const why = res.status === 401
+    ? "the `DISCORD_BOT_TOKEN` is invalid — it was probably reset after the secret was stored"
+    : known[code] || `Discord said ${res.status}${code ? ` (code ${code})` : ""}: ${message}`;
+  return { ok: false, why };
 }
 
 // Once per week, after Friday's close, crown the champion. Idempotent: a KV marker per
@@ -243,8 +270,8 @@ async function announceChampion(env) {
   if (await env.ROSTER.get(marker)) return; // already crowned this week
   const podium = pickPodium((await fetchStandings(env))?.rows);
   if (!podium.length) { await env.ROSTER.put(marker, "1"); return; } // nobody to crown; don't retry
-  const ok = await postToChannel(env, { embeds: [championEmbed(podium, env)] });
-  if (ok) await env.ROSTER.put(marker, "1");
+  const { ok } = await postToChannel(env, { embeds: [championEmbed(podium, env)] });
+  if (ok) await env.ROSTER.put(marker, "1"); // only mark done on a real post, so a fixable failure retries next hour
 }
 
 export default {
