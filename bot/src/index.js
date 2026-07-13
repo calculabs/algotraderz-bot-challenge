@@ -74,6 +74,9 @@ async function isShared(accountId) {
 // rebuilt on the rare mutations (join / link / leave / remove). ROSTER_ALL is a cache of
 // the user:* keys, never the source of truth: if it's missing we rebuild it from them.
 const rosterKey = (id) => `user:${id}`;
+// Tombstone left behind by /leave: remembers which account you entered the week on, so a
+// leave+rejoin can't be used to swap accounts mid-week. Cleared on rejoin and by /remove.
+const leftKey = (id) => `left:${id}`;
 const ROSTER_ALL = "roster:all";
 
 async function listRoster(env) {
@@ -139,10 +142,23 @@ async function upsertLink(interaction, env, { updating }) {
     return reply("❌ That doesn't look like a TopstepX share link. Copy it from your stats page — e.g. `https://topstepx.com/share/stats?share=24801853`.");
   }
   const existing = await env.ROSTER.get(rosterKey(u.id), "json");
-  const isSwap = existing ? existing.accountId !== accountId : false;
-  const isNewJoin = !existing;
+  // /leave leaves a tombstone, so leaving and rejoining can't launder an account swap: a
+  // trader having a bad week could otherwise /leave, /join a different (better) account,
+  // and land as a "brand-new join" — which LOCK_JOIN lets through by design. The account
+  // you entered the week on is the one you're scored on, however you re-enter.
+  const stale = existing ? null : await env.ROSTER.get(leftKey(u.id), "json");
+  // Only a tombstone from THIS week can gate a rejoin. One from a week you sat out is just
+  // history — you're a legitimate new entrant this week and may enter on any account.
+  const weekStart = new Date(weekSchedule(new Date()).weekStart).getTime();
+  const tomb = stale && new Date(stale.leftAt).getTime() >= weekStart ? stale : null;
+  const priorAccount = existing?.accountId ?? tomb?.accountId ?? null;
+  const isSwap = priorAccount != null && priorAccount !== accountId;
+  const isNewJoin = !existing && !tomb;
   const gated = isSwap || (isNewJoin && truthy(env.LOCK_JOIN));
   if (gated && !registrationOpen()) {
+    if (isSwap && tomb) {
+      return reply(`🔒 Leaving doesn't reset your account. You entered this week on account **${priorAccount}** — you can rejoin on that one, but not on a different account mid-week. Account changes reopen after **Friday's close**.`);
+    }
     return reply(isSwap
       ? "🔒 You can't swap accounts mid-week. Account changes reopen after **Friday's close**, before **Sunday's open**."
       : "🔒 Joining is closed while the week is live. Come back after **Friday's close** to enter.");
@@ -159,10 +175,13 @@ async function upsertLink(interaction, env, { updating }) {
     // Fall back to updatedAt for entries written before joinedAt existed: stamping `now`
     // would date a long-standing competitor to today and drop them out of the week they
     // already competed in. No KV backfill needed — this converges them on first write.
-    joinedAt: existing?.joinedAt ?? existing?.updatedAt ?? now,
+    // A rejoin restores the original join date from the tombstone — otherwise /leave +
+    // /join would re-date them to today and change which week they belong to.
+    joinedAt: existing?.joinedAt ?? existing?.updatedAt ?? tomb?.joinedAt ?? now,
     updatedAt: now
   };
   await env.ROSTER.put(rosterKey(u.id), JSON.stringify(entry));
+  if (stale) await env.ROSTER.delete(leftKey(u.id)); // they're back; clear it either way
   await rebuildRoster(env);
   const shared = await isShared(accountId);
   if (!shared) {
@@ -187,10 +206,15 @@ const COMMANDS = {
 
   async leave(interaction, env) {
     const u = userOf(interaction);
-    const existed = await env.ROSTER.get(rosterKey(u.id));
+    const existing = await env.ROSTER.get(rosterKey(u.id), "json");
+    if (!existing) return reply("You weren't on the board.");
     await env.ROSTER.delete(rosterKey(u.id));
-    if (existed) await rebuildRoster(env);
-    return reply(existed ? "👋 Removed you from the board. Come back anytime with `/join`." : "You weren't on the board.");
+    // Remember the account they entered on (see leftKey) so rejoining can't swap it.
+    await env.ROSTER.put(leftKey(u.id), JSON.stringify({
+      discordId: u.id, accountId: existing.accountId, joinedAt: existing.joinedAt ?? existing.updatedAt, leftAt: new Date().toISOString()
+    }));
+    await rebuildRoster(env);
+    return reply(`👋 Removed you from the board. You can rejoin anytime with \`/join\` — during a live week it has to be the same account (**${existing.accountId}**).`);
   },
 
   leaderboard(interaction, env) {
@@ -206,6 +230,9 @@ const COMMANDS = {
     if (!targetId) return reply("Pick a competitor to remove.");
     const existed = await env.ROSTER.get(rosterKey(targetId));
     await env.ROSTER.delete(rosterKey(targetId));
+    // Organizer override: a true reset, tombstone and all, so a pruned duplicate/no-show can
+    // rejoin cleanly on any account. (/leave deliberately does NOT clear it.)
+    await env.ROSTER.delete(leftKey(targetId));
     if (existed) await rebuildRoster(env);
     return reply(existed ? `🗑️ Removed <@${targetId}> from the board.` : "That person wasn't on the board.");
   },
