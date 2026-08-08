@@ -131,7 +131,9 @@ The same channel gets the Sunday "board is clear" notice — the reset runs whet
 
 ### 9. The Sunday reset
 
-Nothing to configure — it's the second cron in `wrangler.toml` (`*/10 * * * 0`, every 10 min on Sundays UTC). It only acts in the pre-open window (Sun 1pm → 3pm PT) and only once per week, tracked by a `cleared:<weekStart>` KV marker. ~12 attempts cover a 2-hour window, so a cold Worker or a failed Discord post doesn't lose the reset.
+Nothing to configure — it rides the same cron as the champion post (`*/10 * * * *`). It only acts in the pre-open window (Sun 1pm → 3pm PT) and only once per week, tracked by a `cleared:<weekStart>` KV marker. ~12 attempts cover a 2-hour window, so a cold Worker or a failed Discord post doesn't lose the reset.
+
+Don't try to narrow that cron to Sundays: Cloudflare's day-of-week field is `1-7` or `SUN-SAT`, so `*/10 * * * 0` returns a **400 and the entire schedules update fails** — which deploys new code with no triggers behind it, the worst of both. Off-window fires cost a single phase check, so narrowing buys nothing.
 
 It deliberately **never** fires during a live week — that would erase a real field mid-competition. If every attempt somehow misses, the old roster just carries over and an organizer runs `/reset`, which does the same wipe on demand (and, inside the pre-open window, claims the week's marker and posts the notice so the cron doesn't repeat it).
 

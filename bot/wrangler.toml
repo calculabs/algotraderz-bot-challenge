@@ -29,16 +29,21 @@ LOCK_JOIN = "false"
 # in this channel, and DISCORD_BOT_TOKEN must be set as a secret (see below).
 ANNOUNCE_CHANNEL_ID = "1515193707228434675"
 
-# Two jobs, both driven off the site's CME calendar, both idempotent per week — every fire
-# runs both and the phase gate decides which (if either) does anything.
+# One cron drives both jobs; each self-gates on the CME calendar phase and is idempotent
+# per week, so firing constantly is free and the schedule carries no logic of its own:
 #
-#   "0 * * * *"    hourly — weekly champion post, after Friday's CME close.
-#   "*/10 * * * 0" every 10 min on Sunday (UTC) — clears the board in the pre-open window,
-#                  Sun 1pm -> 3pm PT. That's only 2 hours, and a missed window means the
-#                  roster carries into the live week, so it gets ~12 attempts, not 2.
-#                  1pm PT is 20:00 UTC (21:00 on standard time) — Sunday UTC either way.
+#   champion post   only when the week is "done" (after Friday's CME close)
+#   board clear     only in the "pre" window (Sun 1pm -> 3pm PT)
+#
+# Every 10 min rather than hourly because the clear's window is just 2 hours and missing it
+# means last week's roster carries into the live week — ~12 attempts at it instead of 2.
+#
+# Do NOT narrow this to Sundays with a day-of-week field: Cloudflare's cron parser takes
+# 1-7 or SUN-SAT there, so the obvious "*/10 * * * 0" is a 400 and the whole schedules
+# update fails — leaving fresh code deployed with no triggers behind it. Off-window fires
+# cost one phase check and return, so there is nothing to save by narrowing.
 [triggers]
-crons = ["0 * * * *", "*/10 * * * 0"]
+crons = ["*/10 * * * *"]
 
 # Secrets are NOT stored here — set the bot token once with:
 #   npx wrangler secret put DISCORD_BOT_TOKEN
