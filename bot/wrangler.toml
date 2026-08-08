@@ -29,10 +29,16 @@ LOCK_JOIN = "false"
 # in this channel, and DISCORD_BOT_TOKEN must be set as a secret (see below).
 ANNOUNCE_CHANNEL_ID = "1515193707228434675"
 
-# Weekly champion post. Cron runs hourly; the handler self-gates (only after Friday's
-# CME close) and is idempotent, so it posts exactly once per week. Harmless when off.
+# Two jobs, both driven off the site's CME calendar, both idempotent per week — every fire
+# runs both and the phase gate decides which (if either) does anything.
+#
+#   "0 * * * *"    hourly — weekly champion post, after Friday's CME close.
+#   "*/10 * * * 0" every 10 min on Sunday (UTC) — clears the board in the pre-open window,
+#                  Sun 1pm -> 3pm PT. That's only 2 hours, and a missed window means the
+#                  roster carries into the live week, so it gets ~12 attempts, not 2.
+#                  1pm PT is 20:00 UTC (21:00 on standard time) — Sunday UTC either way.
 [triggers]
-crons = ["0 * * * *"]
+crons = ["0 * * * *", "*/10 * * * 0"]
 
 # Secrets are NOT stored here — set the bot token once with:
 #   npx wrangler secret put DISCORD_BOT_TOKEN

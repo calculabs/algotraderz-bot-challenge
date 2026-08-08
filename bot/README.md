@@ -15,15 +15,30 @@ Traders manage themselves in the server:
 | Command | What it does |
 | --- | --- |
 | `/join <share link>` | Join, or update your link |
-| `/link <share link>` | Swap your account (weekend only) |
+| `/link <share link>` | Swap your account (Sunday, after the clear) |
 | `/mylink` | Show what's on file for you |
 | `/leave` | Drop out |
 | `/leaderboard` | Link to the live board |
 | `/remove <user>` | **Organizer only** — prune someone |
+| `/reset` | **Organizer only** — clear the board now |
 
 All replies are **ephemeral** (only the person running the command sees them), so the channel stays clean.
 
-**Swaps lock during the live week.** Once the trading week is live (Sun open → Fri close), you can't switch to a different account — `/link` (or a re-`/join` with a new account) replies with a 🔒 notice until the weekend break. Changes reopen after Friday's CME close. **Brand-new late joins stay open** by default (friendly to stragglers); set `LOCK_JOIN = "true"` in `wrangler.toml` to close those during the week too. `/leave`, `/mylink`, and `/leaderboard` work anytime.
+## The week, in three states
+
+| When | State | What works |
+| --- | --- | --- |
+| Fri close → **Sun ~1pm PT** | 🧊 **Frozen** | Nothing changes. `/join`, `/link` and `/leave` all refuse. |
+| Sun ~1pm → **3pm PT** (the clear) | 🧹 **Open** | Board wipes, joining reopens, swap accounts freely. |
+| Sun 3pm → Fri close | 🏁 **Live** | Joining open (unless `LOCK_JOIN`), swaps 🔒 locked. |
+
+**The board clears every Sunday.** Entries are good for one week. A cron wipes the roster in the pre-open window — the same two hours the board already rolls over in — and posts a "new week — the board is clear" notice, so everyone enters the week with `/join` and the link they actually want scored.
+
+That's what makes the swap lock safe. Without it, last week's entry carries into the new week and then freezes: someone who moved accounts over the weekend, or whose share link went private, would be stuck on a dead entry until Friday's close with no command able to fix it.
+
+**The weekend is frozen, not open.** Between Friday's close and Sunday's clear there is no week to enter — anything written then is deleted by the wipe before it can score, so taking the entry would be a lie. Freezing also pins the finished week: the champion announced on Friday still matches the standings on Sunday, because no join, swap or leave can move them in between. Nobody loses anything by waiting, because **a join during the live week still scores the full week** — TopstepX reports P&L from the Sunday open, not from when you joined.
+
+**Swaps lock during the live week.** Once the trading week is live (Sun open → Fri close), you can't switch to a different account — `/link` (or a re-`/join` with a new account) replies with a 🔒 notice. Account changes reopen at Sunday's clear. **Brand-new late joins stay open** by default (friendly to stragglers); set `LOCK_JOIN = "true"` in `wrangler.toml` to close those during the week too. `/mylink` and `/leaderboard` work anytime.
 
 ---
 
@@ -111,6 +126,14 @@ Have the bot post the winner into a channel after Friday's close:
 4. `npm run deploy`.
 
 A cron runs hourly Fri–Sun and self-gates, so it posts the champion **exactly once** after Friday's CME close (idempotent via a per-week KV marker), pulling standings from the published `data/leaderboard.json`. Leave `ANNOUNCE_CHANNEL_ID` blank to keep it off.
+
+The same channel gets the Sunday "board is clear" notice — the reset runs whether or not a channel is configured, so a blank `ANNOUNCE_CHANNEL_ID` only costs the heads-up, not the wipe.
+
+### 9. The Sunday reset
+
+Nothing to configure — it's the second cron in `wrangler.toml` (`*/10 * * * 0`, every 10 min on Sundays UTC). It only acts in the pre-open window (Sun 1pm → 3pm PT) and only once per week, tracked by a `cleared:<weekStart>` KV marker. ~12 attempts cover a 2-hour window, so a cold Worker or a failed Discord post doesn't lose the reset.
+
+It deliberately **never** fires during a live week — that would erase a real field mid-competition. If every attempt somehow misses, the old roster just carries over and an organizer runs `/reset`, which does the same wipe on demand (and, inside the pre-open window, claims the week's marker and posts the notice so the cron doesn't repeat it).
 
 ---
 

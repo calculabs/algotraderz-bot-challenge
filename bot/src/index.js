@@ -9,6 +9,9 @@
 // The roster lives in a KV namespace (binding ROSTER), one key per competitor:
 //   user:<discordId> -> { discordId, name, url, accountId, joinedAt, updatedAt }
 //
+// The roster is per-week: a cron wipes it every Sunday in the pre-open window, so a week
+// always starts from an empty board and nobody inherits a link they can no longer change.
+//
 // The Worker needs no bot token (it only verifies request signatures with the app's
 // public key and replies inline). The token is used solely by register.js, run once
 // from your laptop to publish the command list.
@@ -98,6 +101,29 @@ async function readRoster(env) {
   return rebuildRoster(env); // cold start / first deploy
 }
 
+// Empty the board: every competitor, plus the /leave tombstones that shadow them (they're
+// scoped to the week that just ended, so they'd only block a legitimate fresh entry).
+// Paginated — list() returns at most 1000 keys a page, and a half-wipe would leave some of
+// last week's links standing, which is the exact thing the reset exists to prevent.
+// Returns how many competitors were cleared.
+async function clearRoster(env) {
+  let cleared = 0;
+  for (const prefix of ["user:", "left:"]) {
+    let cursor;
+    do {
+      const page = await env.ROSTER.list({ prefix, cursor });
+      await Promise.all(page.keys.map((k) => env.ROSTER.delete(k.name)));
+      if (prefix === "user:") cleared += page.keys.length;
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+  }
+  // Write the empty denormalized key directly instead of rebuildRoster(): KV deletes are
+  // eventually consistent, so a LIST right after the wipe can still hand back the keys we
+  // just deleted and resurrect the whole roster. Here the answer is known — it's empty.
+  await env.ROSTER.put(ROSTER_ALL, JSON.stringify([]));
+  return cleared;
+}
+
 // ---- Discord request-signature verification (Ed25519 via Web Crypto) ----
 const hexToBytes = (hex) => Uint8Array.from(hex.match(/.{1,2}/g).map((b) => parseInt(b, 16)));
 
@@ -122,14 +148,33 @@ const adminIds = (env) => String(env.ADMIN_IDS || "").split(",").map((s) => s.tr
 
 const truthy = (v) => /^(1|true|on|yes)$/i.test(String(v ?? "").trim());
 
-// The weekend break — phase "done" (after Friday's close) or "pre" (before the first
-// week ever opens) — is when the board is open to changes. During the live week
-// (Sun open → Fri close) it's closed. Uses the site's canonical CME calendar so the
-// two can't drift.
-export function registrationOpen(now = new Date()) {
-  const phase = weekSchedule(now).phase;
-  return phase === "done" || phase === "pre";
+// Three states, all read off the site's canonical CME calendar so the bot and the board
+// can't drift:
+//
+//   "done"   Fri close → Sun 1pm PT   FROZEN. The week is finished and waiting to be
+//                                     cleared; nothing on the board may change.
+//   "pre"    Sun 1pm → 3pm PT         OPEN. The reset just wiped the board — join, and
+//                                     swap accounts as often as you like.
+//   live     Sun 3pm → Fri close      Joins open (unless LOCK_JOIN), swaps locked.
+//
+// The frozen weekend is what makes the reset honest. An entry written after Friday's close
+// is deleted by Sunday's wipe before it can ever score, so accepting one would be a lie —
+// the bot would say "you're on the board" and the board would disagree by Sunday evening.
+// Freezing also pins the finished week: the champion announced on Friday still matches the
+// standings on Sunday, because no join, swap or leave can move them in between.
+export function boardFrozen(now = new Date()) {
+  return weekSchedule(now).phase === "done";
 }
+
+// The clean-slate window, right after the Sunday wipe: the only time an account SWAP is
+// allowed, since everyone is entering the new week from empty.
+export function registrationOpen(now = new Date()) {
+  return weekSchedule(now).phase === "pre";
+}
+
+// What every refusal during the freeze tells you to do. The wipe lands ~2h before the open.
+const COMES_BACK_SUNDAY =
+  "The board **clears every Sunday**, about 2h before the open, and joining opens the moment it does — `/join` then with the account you want scored for the week.";
 
 // Shared by /join and /link. Mid-week we lock the thing that actually games the
 // competition — SWAPPING to a different account (via /link, or a re-/join with a new
@@ -140,6 +185,14 @@ async function upsertLink(interaction, env, { updating }) {
   const accountId = parseAccountId(optionValue(interaction, "link"));
   if (accountId == null) {
     return reply("❌ That doesn't look like a TopstepX share link. Copy it from your stats page — e.g. `https://topstepx.com/share/stats?share=24801853`.");
+  }
+  // Checked before anything is read or written: between Friday's close and Sunday's wipe
+  // there is no week to enter. Turning people away here is kinder than taking the entry
+  // and deleting it on Sunday — nobody loses a week over it, since a join any time during
+  // the live week still scores the full week (TopstepX reports P&L from the Sunday open,
+  // not from when you joined).
+  if (boardFrozen()) {
+    return reply(`🧊 The week is finished and the board is frozen until it clears. ${COMES_BACK_SUNDAY}`);
   }
   const existing = await env.ROSTER.get(rosterKey(u.id), "json");
   // /leave leaves a tombstone, so leaving and rejoining can't launder an account swap: a
@@ -155,13 +208,15 @@ async function upsertLink(interaction, env, { updating }) {
   const isSwap = priorAccount != null && priorAccount !== accountId;
   const isNewJoin = !existing && !tomb;
   const gated = isSwap || (isNewJoin && truthy(env.LOCK_JOIN));
+  // The freeze already returned above, so by here the week is either live (swaps locked)
+  // or in the post-wipe pre-open window (everything allowed).
   if (gated && !registrationOpen()) {
     if (isSwap && tomb) {
-      return reply(`🔒 Leaving doesn't reset your account. You entered this week on account **${priorAccount}** — you can rejoin on that one, but not on a different account mid-week. Account changes reopen after **Friday's close**.`);
+      return reply(`🔒 Leaving doesn't reset your account. You entered this week on account **${priorAccount}** — you can rejoin on that one, but not on a different account mid-week. ${COMES_BACK_SUNDAY}`);
     }
     return reply(isSwap
-      ? "🔒 You can't swap accounts mid-week. Account changes reopen after **Friday's close**, before **Sunday's open**."
-      : "🔒 Joining is closed while the week is live. Come back after **Friday's close** to enter.");
+      ? `🔒 You can't swap accounts mid-week. ${COMES_BACK_SUNDAY}`
+      : `🔒 Joining is closed while the week is live. ${COMES_BACK_SUNDAY}`);
   }
   // joinedAt is when this person FIRST entered, and it survives link swaps — the board uses
   // it to decide which week they belong to, so an /link update must not move it forward
@@ -199,15 +254,27 @@ const COMMANDS = {
   async mylink(interaction, env) {
     const u = userOf(interaction);
     const entry = await env.ROSTER.get(rosterKey(u.id), "json");
+    // During the freeze, "change it with /link" would be a promise the next command breaks.
+    const next = boardFrozen()
+      ? `This was **last week's** entry — it clears on Sunday. ${COMES_BACK_SUNDAY}`
+      : "Change it with `/link`, or `/leave` to drop out.";
     return entry
-      ? reply(`🔎 You're tracked on account **${entry.accountId}**\n${entry.url}\nChange it with \`/link\`, or \`/leave\` to drop out.`)
-      : reply("You're not on the board yet. Add yourself with `/join <your TopstepX share link>`.");
+      ? reply(`🔎 You're tracked on account **${entry.accountId}**\n${entry.url}\n${next}`)
+      : reply(boardFrozen()
+        ? `You're not on the board. ${COMES_BACK_SUNDAY}`
+        : "You're not on the board yet. Add yourself with `/join <your TopstepX share link>`.");
   },
 
   async leave(interaction, env) {
     const u = userOf(interaction);
     const existing = await env.ROSTER.get(rosterKey(u.id), "json");
     if (!existing) return reply("You weren't on the board.");
+    // Frozen too, and for once the refusal costs nothing: the week is already scored, and
+    // Sunday's wipe drops you anyway. Deleting now would only rewrite a finished week's
+    // standings — after the champion has been announced off them.
+    if (boardFrozen()) {
+      return reply(`🧊 The week is finished, so there's nothing left to drop out of — and the board is frozen until it clears on Sunday. **You're out by default**: entries don't carry over, so just don't \`/join\` next week.`);
+    }
     await env.ROSTER.delete(rosterKey(u.id));
     // Remember the account they entered on (see leftKey) so rejoining can't swap it.
     await env.ROSTER.put(leftKey(u.id), JSON.stringify({
@@ -254,6 +321,28 @@ const COMMANDS = {
     if (crowned) await env.ROSTER.put(announcedKey(sched), "1");
     return reply(`✅ Posted the champion (**${podium[0].name}**) to the announcements channel.` +
       (crowned ? " This week is now marked as announced, so the hourly cron won't repost it." : ""));
+  },
+
+  // Organizer-only: clear the board now. Same path the Sunday cron uses — a manual button
+  // for the week the cron missed, and a way to test the reset end to end.
+  async reset(interaction, env) {
+    const u = userOf(interaction);
+    if (!adminIds(env).includes(u.id)) return reply("⛔ Only the organizer can clear the board.");
+    const sched = weekSchedule(new Date());
+    const cleared = await clearRoster(env);
+    const n = `**${cleared}** ${cleared === 1 ? "entry" : "entries"}`;
+    // In the pre-open window this IS the week's reset: claim the marker so the cron doesn't
+    // clear a second time and wipe whoever joins in between, and post the public notice.
+    // Any other time it's a repair, not a new week — clearing silently is the right blast
+    // radius, and Friday's champion announcement still needs its own marker left alone.
+    if (sched.phase !== "pre") {
+      return reply(`🧹 Cleared ${n} from the board. This isn't the pre-open window, so no "new week" notice went out and Sunday's automatic reset is still armed.` +
+        (sched.phase === "done" ? " Note the board stays **frozen** until Sunday's clear, so nobody can `/join` back on in the meantime." : ""));
+    }
+    await env.ROSTER.put(clearedKey(sched), "1");
+    const { ok, why } = await postToChannel(env, { embeds: [newWeekEmbed(env)] });
+    return reply(`🧹 Cleared ${n} — the board is open for \`/join\`. ` +
+      (ok ? "Posted the new-week notice to the announcements channel." : `⚠️ Couldn't post the notice: ${why}.`));
   }
 };
 
@@ -290,7 +379,7 @@ export function championEmbed(podium, env) {
     description:
       `**${pct(w.overall.return_pct)}** return · **${money(w.overall.pnl)}** weekly P&L` +
       (runners ? `\n\n${runners}` : "") +
-      `\n\n[Full board](${siteBase(env)})\nNew week opens Sunday — \`/join\` to enter.`,
+      `\n\n[Full board](${siteBase(env)})\nThe board is frozen until it clears Sunday, ~2h before the open — \`/join\` then to enter the new week.`,
     color: 0xf4c04f
   };
 }
@@ -366,9 +455,56 @@ async function announceChampion(env) {
   if (ok) await env.ROSTER.put(marker, "1"); // only mark done on a real post, so a fixable failure retries next hour
 }
 
+// ---- Sunday reset ----
+//
+// Entries are good for one week. Every Sunday, in the two-hour pre-open window the board
+// already rolls over in (1pm PT -> the 3pm CME open), the roster is wiped so the new week
+// starts empty. Without it, last week's link carries into the new week and the mid-week
+// swap lock then freezes it there: a trader who changed accounts over the weekend, or
+// whose share went private, is stuck on a dead entry until Friday's close with no command
+// that can fix it. Clearing costs a `/join` — it never costs someone a week.
+//
+// The window is deliberately the only time this fires. A wipe during a live week would
+// erase a real field mid-competition, so if every cron fire in the window is missed the
+// board simply carries over and the organizer runs `/reset`.
+export const clearedKey = (sched) => `cleared:${String(sched.weekStart).slice(0, 10)}`;
+
+export function newWeekEmbed(env) {
+  return {
+    title: "🧹 New week — the board is clear",
+    description:
+      "Last week's entries are gone and **joining is open now**. Run `/join <your TopstepX share link>` to enter.\n\n" +
+      "Until the open you can `/link` a different account freely. After that, swaps lock for the week — so enter on the account you actually want scored.\n\n" +
+      `[Board](${siteBase(env)})`,
+    color: 0x5865f2
+  };
+}
+
+async function resetForNewWeek(env) {
+  const sched = weekSchedule(new Date());
+  if (sched.phase !== "pre") return;
+  const marker = clearedKey(sched);
+  if (await env.ROSTER.get(marker)) return; // already cleared this week
+  // Claim the week BEFORE wiping, not after: joining reopens the instant the board empties,
+  // so a second pass — an overlapping cron fire, a retry after a slow post — would delete
+  // whoever entered in between. If the wipe itself fails, drop the claim so the next fire
+  // retries rather than leaving the week marked done with last week's roster still on it.
+  await env.ROSTER.put(marker, "1");
+  try {
+    await clearRoster(env);
+  } catch (e) {
+    await env.ROSTER.delete(marker);
+    throw e;
+  }
+  await postToChannel(env, { embeds: [newWeekEmbed(env)] });
+}
+
 export default {
   async scheduled(event, env, ctx) {
+    // Phase-exclusive: the champion posts after Friday's close ("done"), the reset fires in
+    // Sunday's pre-open window ("pre"). Both self-gate, so every cron fire can run both.
     ctx.waitUntil(announceChampion(env));
+    ctx.waitUntil(resetForNewWeek(env));
   },
 
   async fetch(request, env, ctx) {

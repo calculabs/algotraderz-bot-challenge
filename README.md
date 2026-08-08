@@ -76,6 +76,17 @@ that roster over the `participants.json` seed via `src/roster.mjs` (set `ROSTER_
 to the deployed Worker's `/roster` URL). The site's ⚙ **Manage** panel just shows the
 commands + current roster. See [`bot/README.md`](bot/README.md) for setup.
 
+**Entries last one week.** A bot cron clears the roster every Sunday in the pre-open window
+(1pm → 3pm PT) and posts a notice, so the new week starts from an empty board. Account
+swaps lock once the week is live, so without the clear last week's link would carry over
+*and* be frozen there — a moved account or a share link turned private would be stuck for
+the whole week. Re-`/join` each week with the account you want scored.
+
+Between Friday's close and that clear the board is **frozen** — `/join`, `/link` and
+`/leave` all refuse, because anything written in that window is wiped before it can score,
+and the finished week has to keep matching the champion already announced from it. Waiting
+costs nothing: a join at any point in the live week is still scored on the whole week.
+
 To pin a fixed competition window instead of the live week, add ISO `weekStart` / `weekEnd`
 to `challenge`. Override the account-size tiers with `challenge.accountSizes` if needed.
 

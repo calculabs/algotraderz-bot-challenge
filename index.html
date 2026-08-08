@@ -526,13 +526,16 @@
       const fmt = (iso) => new Date(iso + "T12:00:00Z").toLocaleDateString(undefined, { month: "short", day: "numeric" });
       return `Week of ${fmt(days[0].date)} – ${fmt(days[days.length - 1].date)}`;
     }
+    // Counts down to the CLEAR, not the open — GRACE_MS earlier, the same instant this
+    // celebration ends. That's the deadline anyone can act on: the board is frozen until
+    // then (no joins, no swaps, no leaves), and joining reopens the moment it wipes.
     function nextOpenLabel(open) {
-      const ms = open - Date.now();
-      if (ms <= 0) return "New week opening…";
+      const ms = open - GRACE_MS - Date.now();
+      if (ms <= 0) return "Board clearing…";
       const totalMin = Math.floor(ms / 60000);
       const d = Math.floor(totalMin / 1440), h = Math.floor((totalMin % 1440) / 60), m = totalMin % 60;
       const parts = d ? `${d}d ${h}h` : `${h}h ${m}m`;
-      return `Next week opens in <b>${parts}</b>`;
+      return `Board clears in <b>${parts}</b> — joining reopens then`;
     }
 
     // One-shot confetti; cleared after the last piece lands so it can't linger.
@@ -632,12 +635,16 @@
       const eligible = rows.filter((r) => !r.drawdown?.breached && (r.days_traded ?? 0) > 0 && Number.isFinite(Number(r.return_pct)));
       const showInvite = rows.length === 0 || eligible.length === 0;
       const preOpen = DATA.schedule?.phase === "pre";
-      const card = rows.length === 0
-        ? { emoji: "🤖", title: "No bots on the board yet",
-            sub: "Be the first — run <code>/join &lt;your TopstepX share link&gt;</code> in Discord." }
-        : preOpen
-          ? { emoji: "🏁", title: "New week — everyone starts at zero",
-              sub: "The board is reset and the field is set. Trading opens at the CME open; results appear once the session gets going. Not in yet? <code>/join</code>." }
+      // Pre-open is checked first: the Sunday reset empties the roster, so an empty board in
+      // that window is the new week starting, not a dead challenge nobody has ever entered.
+      const card = preOpen
+        ? { emoji: "🏁", title: "New week — the board is clear",
+            sub: rows.length === 0
+              ? "Last week's entries are gone. Run <code>/join &lt;your TopstepX share link&gt;</code> in Discord to enter this week."
+              : "Everyone starts at zero. Trading opens at the CME open; results appear once the session gets going. Not in yet? <code>/join</code>." }
+        : rows.length === 0
+          ? { emoji: "🤖", title: "No bots on the board yet",
+              sub: "Be the first — run <code>/join &lt;your TopstepX share link&gt;</code> in Discord." }
           : { emoji: "🏁", title: "No results in yet",
               sub: "The week is live — standings fill in as trades land. Lock in your account with <code>/join</code>." };
       const inviteCard = `<section class="empty-board">
@@ -764,11 +771,12 @@
         <p class="hint">Your entry is tied to your Discord account — no login, and it works from any device. In the server, just run:</p>
         <div class="cmds">
           <div class="cmd"><code>/join <span class="arg">&lt;your TopstepX share link&gt;</span></code><span class="cmd-h">join, or update your link</span></div>
-          <div class="cmd"><code>/link <span class="arg">&lt;new link&gt;</span></code><span class="cmd-h">swap accounts mid-week</span></div>
+          <div class="cmd"><code>/link <span class="arg">&lt;new link&gt;</span></code><span class="cmd-h">swap accounts (before the open)</span></div>
           <div class="cmd"><code>/mylink</code><span class="cmd-h">see what's on file</span></div>
           <div class="cmd"><code>/leave</code><span class="cmd-h">drop out</span></div>
         </div>
         <a class="btn primary linkbtn" href="${esc(DISCORD_INVITE)}" target="_blank" rel="noreferrer">Open Discord →</a>
+        <p class="hint" style="margin-top:14px;">The board <b>clears every Sunday</b>, ~2h before the open, so entries never carry into a new week — <code>/join</code> each week with the account you want scored. From <b>Friday's close until that clear</b> the board is frozen: the finished week stays exactly as it was announced, and joining reopens the moment it wipes.</p>
         <p class="hint" style="margin-top:14px;">Your account size, P&amp;L and % return are read live from your public share link — turn on <b>Share</b> on your TopstepX stats page so the bot can see it.</p>
 
         <div class="divider"></div>
