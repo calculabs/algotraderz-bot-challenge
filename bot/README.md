@@ -20,7 +20,6 @@ Traders manage themselves in the server:
 | `/leave` | Drop out |
 | `/leaderboard` | Link to the live board |
 | `/remove <user>` | **Organizer only** — prune someone |
-| `/reset` | **Organizer only** — clear the board now |
 
 All replies are **ephemeral** (only the person running the command sees them), so the channel stays clean.
 
@@ -135,7 +134,9 @@ Nothing to configure — it rides the same cron as the champion post (`*/10 * * 
 
 Don't try to narrow that cron to Sundays: Cloudflare's day-of-week field is `1-7` or `SUN-SAT`, so `*/10 * * * 0` returns a **400 and the entire schedules update fails** — which deploys new code with no triggers behind it, the worst of both. Off-window fires cost a single phase check, so narrowing buys nothing.
 
-It deliberately **never** fires during a live week — that would erase a real field mid-competition. If every attempt somehow misses, the old roster just carries over and an organizer runs `/reset`, which does the same wipe on demand (and, inside the pre-open window, claims the week's marker and posts the notice so the cron doesn't repeat it).
+It deliberately **never** fires during a live week — that would erase a real field mid-competition. If every attempt somehow misses, the roster simply carries over for a week (the old behaviour, not a new failure) and the next Sunday clears it.
+
+**There is no manual `/reset` on purpose.** Clearing is irreversible — KV has no undo — and the one moment it's safe is the one moment the cron needs no help. Outside that window, a manual wipe would delete a live field, the exact thing the phase gate forbids. Carrying over for a week is recoverable; deleting an active week is not. Use `/remove` to prune individuals.
 
 ---
 

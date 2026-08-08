@@ -321,29 +321,12 @@ const COMMANDS = {
     if (crowned) await env.ROSTER.put(announcedKey(sched), "1");
     return reply(`✅ Posted the champion (**${podium[0].name}**) to the announcements channel.` +
       (crowned ? " This week is now marked as announced, so the hourly cron won't repost it." : ""));
-  },
-
-  // Organizer-only: clear the board now. Same path the Sunday cron uses — a manual button
-  // for the week the cron missed, and a way to test the reset end to end.
-  async reset(interaction, env) {
-    const u = userOf(interaction);
-    if (!adminIds(env).includes(u.id)) return reply("⛔ Only the organizer can clear the board.");
-    const sched = weekSchedule(new Date());
-    const cleared = await clearRoster(env);
-    const n = `**${cleared}** ${cleared === 1 ? "entry" : "entries"}`;
-    // In the pre-open window this IS the week's reset: claim the marker so the cron doesn't
-    // clear a second time and wipe whoever joins in between, and post the public notice.
-    // Any other time it's a repair, not a new week — clearing silently is the right blast
-    // radius, and Friday's champion announcement still needs its own marker left alone.
-    if (sched.phase !== "pre") {
-      return reply(`🧹 Cleared ${n} from the board. This isn't the pre-open window, so no "new week" notice went out and Sunday's automatic reset is still armed.` +
-        (sched.phase === "done" ? " Note the board stays **frozen** until Sunday's clear, so nobody can `/join` back on in the meantime." : ""));
-    }
-    await env.ROSTER.put(clearedKey(sched), "1");
-    const { ok, why } = await postToChannel(env, { embeds: [newWeekEmbed(env)] });
-    return reply(`🧹 Cleared ${n} — the board is open for \`/join\`. ` +
-      (ok ? "Posted the new-week notice to the announcements channel." : `⚠️ Couldn't post the notice: ${why}.`));
   }
+  // Deliberately no manual /reset. Clearing is irreversible (KV has no undo), and the one
+  // moment it's safe — the pre-open window — is the only moment the cron needs no help:
+  // it gets ~12 attempts there and releases its claim if a wipe fails. Outside that window
+  // a manual wipe would erase a live field, which is exactly what the phase gate exists to
+  // forbid. Prune individuals with /remove instead.
 };
 
 // ---- weekly champion announcement ----
@@ -465,8 +448,9 @@ async function announceChampion(env) {
 // that can fix it. Clearing costs a `/join` — it never costs someone a week.
 //
 // The window is deliberately the only time this fires. A wipe during a live week would
-// erase a real field mid-competition, so if every cron fire in the window is missed the
-// board simply carries over and the organizer runs `/reset`.
+// erase a real field mid-competition, so if every fire in the window is somehow missed the
+// board just carries over for a week — the old behaviour, not a new failure — and the next
+// Sunday clears it. Carrying over is recoverable; deleting a live field is not.
 export const clearedKey = (sched) => `cleared:${String(sched.weekStart).slice(0, 10)}`;
 
 export function newWeekEmbed(env) {

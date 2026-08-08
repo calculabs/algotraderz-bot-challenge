@@ -36,10 +36,6 @@ const commands = [
   {
     name: "announce",
     description: "(Organizer) Post the current champion to the announcements channel"
-  },
-  {
-    name: "reset",
-    description: "(Organizer) Clear the board now — the same wipe Sunday's cron does"
   }
 ];
 
