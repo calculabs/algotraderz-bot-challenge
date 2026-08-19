@@ -26,12 +26,19 @@ const WEEKDAY = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 // The pre-open window reports phase "pre" with currentDay 0.
 const ROLLOVER_LEAD_MS = 2 * 60 * 60 * 1000;
 
+// One formatter, built once. Constructing an Intl.DateTimeFormat with a timeZone loads ICU
+// tz data and is the most expensive thing in this file — several ms cold. The bot's Worker
+// calls weekSchedule() on every request AND every cron fire, under a 10 ms CPU budget on the
+// free plan, so it can't afford to rebuild this on each call. The instance is stateless and
+// safe to share.
+let PT_FORMAT;
 function ptParts(date) {
-  const p = new Intl.DateTimeFormat("en-US", {
+  PT_FORMAT ??= new Intl.DateTimeFormat("en-US", {
     timeZone: TZ, hour12: false, weekday: "short",
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", second: "2-digit"
-  }).formatToParts(date).reduce((a, x) => ((a[x.type] = x.value), a), {});
+  });
+  const p = PT_FORMAT.formatToParts(date).reduce((a, x) => ((a[x.type] = x.value), a), {});
   return {
     year: +p.year, month: +p.month, day: +p.day,
     hour: +p.hour % 24, minute: +p.minute, second: +p.second,
@@ -88,6 +95,10 @@ export function weekSchedule(now = new Date()) {
 
   return {
     weekStart: new Date(weekOpen).toISOString(),
+    // The instant this week's board replaced last week's: Sunday 1pm PT, 2h before the open.
+    // The bot uses it as the line between a live entry and last week's — anything written
+    // before it belongs to a finished week — so it lives here, next to the rollover rule.
+    rollover: new Date(weekOpen - ROLLOVER_LEAD_MS).toISOString(),
     weekEnd: new Date(weekOpen + 7 * DAY_MS).toISOString(),
     close: new Date(closeMs).toISOString(),
     currentDay,

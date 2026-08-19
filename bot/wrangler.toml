@@ -29,21 +29,33 @@ LOCK_JOIN = "false"
 # in this channel, and DISCORD_BOT_TOKEN must be set as a secret (see below).
 ANNOUNCE_CHANNEL_ID = "1515193707228434675"
 
-# One cron drives both jobs; each self-gates on the CME calendar phase and is idempotent
-# per week, so firing constantly is free and the schedule carries no logic of its own:
+# One cron drives both jobs; each self-gates on the CME calendar phase and on a per-week KV
+# marker, so firing constantly is free (2 KV reads a fire at steady state) and the schedule
+# carries no logic of its own:
 #
-#   champion post   only when the week is "done" (after Friday's CME close)
-#   board clear     only in the "pre" window (Sun 1pm -> 3pm PT)
+#   champion post    once the week is "done" (after Friday's CME close)
+#   rollover sweep   any fire after Sunday's 1pm PT rollover — deletes last week's keys and
+#                    posts the "new week" notice. Idempotent: it can run late or twice.
 #
-# Every 10 min rather than hourly because the clear's window is just 2 hours and missing it
-# means last week's roster carries into the live week — ~12 attempts at it instead of 2.
+# Every 10 min rather than hourly so the sweep and notice normally land within minutes of the
+# rollover, while traders are waiting for the open. It is NOT load-bearing that a fire lands
+# in the pre-open window: entries are dated, and the bot treats last week's as gone from the
+# rollover on regardless of when the sweep runs. (The 2026-08-16 rollover was missed under
+# the old design, where one clean fire in that window was the only thing that cleared the
+# board — the roster carried into the live week and got stuck behind the swap lock.)
 #
 # Do NOT narrow this to Sundays with a day-of-week field: Cloudflare's cron parser takes
 # 1-7 or SUN-SAT there, so the obvious "*/10 * * * 0" is a 400 and the whole schedules
-# update fails — leaving fresh code deployed with no triggers behind it. Off-window fires
-# cost one phase check and return, so there is nothing to save by narrowing.
+# update fails — leaving fresh code deployed with no triggers behind it.
 [triggers]
 crons = ["*/10 * * * *"]
+
+# Workers Logs (free tier: 200k events/day, a few days' retention). The bot console.logs
+# what each cron fire did — phase, how many entries the sweep dropped, whether the notice or
+# champion post went out and why not — so a missed rollover can be read off the dashboard
+# (Worker → Logs) instead of reconstructed from the roster after the fact.
+[observability]
+enabled = true
 
 # Secrets are NOT stored here — set the bot token once with:
 #   npx wrangler secret put DISCORD_BOT_TOKEN

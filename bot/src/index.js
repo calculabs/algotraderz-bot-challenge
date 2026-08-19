@@ -9,8 +9,12 @@
 // The roster lives in a KV namespace (binding ROSTER), one key per competitor:
 //   user:<discordId> -> { discordId, name, url, accountId, joinedAt, updatedAt }
 //
-// The roster is per-week: a cron wipes it every Sunday in the pre-open window, so a week
-// always starts from an empty board and nobody inherits a link they can no longer change.
+// The roster is per-week. The line between weeks is the Sunday 1pm PT rollover (see
+// calendar.mjs): from that instant every entry written before it is last week's and is
+// treated as gone by every read and command here, and a cron sweeps the dead keys and posts
+// the "new week" notice. The sweep is housekeeping — the board is clear at the rollover
+// whether or not it has run yet — so a week always starts from an empty board and nobody
+// inherits a link they can no longer change.
 //
 // The Worker needs no bot token (it only verifies request signatures with the app's
 // public key and replies inline). The token is used solely by register.js, run once
@@ -82,6 +86,34 @@ const rosterKey = (id) => `user:${id}`;
 const leftKey = (id) => `left:${id}`;
 const ROSTER_ALL = "roster:all";
 
+// ---- the week boundary ----
+//
+// Entries are good for one week, and the boundary is the Sunday 1pm PT rollover — the same
+// instant the board flips to the new week. Anything written before it belongs to a finished
+// week and is GONE from that moment: /roster hides it, /join and /link overwrite it as if it
+// weren't there, /leave and /mylink don't see it. The cron then deletes the keys and posts the
+// notice, but nothing waits on it.
+//
+// This is deliberate. The reset used to be the cron's job alone: one wipe, in a two-hour
+// window, gating everything. On 2026-08-16 that wipe didn't land — the roster carried into
+// the live week, the swap lock froze it there, and a trader who'd reset their account over
+// the weekend was stuck on a dead entry with no command that could free them (/leave tombstoned
+// it, so leaving didn't help either). Correctness can't hang on one cron fire landing cleanly
+// inside a window: the clock decides what's stale, and the sweep can run late, run twice, or
+// fail and retry without the board ever being wrong.
+const stamp = (iso) => {
+  const t = new Date(iso).getTime();
+  return Number.isFinite(t) ? t : 0; // missing/garbage timestamps sort as ancient
+};
+const rolloverMs = (sched) => stamp(sched.rollover);
+// A competitor entry from a finished week. Keyed on updatedAt, not joinedAt: joinedAt is
+// preserved across re-submits (it says when someone FIRST entered), so only updatedAt says
+// whether this entry was written for the current week.
+const staleEntry = (e, sched) => stamp(e?.updatedAt ?? e?.joinedAt) < rolloverMs(sched);
+// A /leave tombstone from a finished week: it could only ever gate a rejoin during the week
+// it was written in.
+const staleTomb = (t, sched) => stamp(t?.leftAt) < rolloverMs(sched);
+
 async function listRoster(env) {
   const list = await env.ROSTER.list({ prefix: "user:" });
   const entries = await Promise.all(list.keys.map((k) => env.ROSTER.get(k.name, "json")));
@@ -95,33 +127,13 @@ async function rebuildRoster(env) {
   return entries;
 }
 
-async function readRoster(env) {
+async function readRoster(env, sched) {
   const cached = await env.ROSTER.get(ROSTER_ALL, "json");
-  if (Array.isArray(cached)) return cached;
-  return rebuildRoster(env); // cold start / first deploy
-}
-
-// Empty the board: every competitor, plus the /leave tombstones that shadow them (they're
-// scoped to the week that just ended, so they'd only block a legitimate fresh entry).
-// Paginated — list() returns at most 1000 keys a page, and a half-wipe would leave some of
-// last week's links standing, which is the exact thing the reset exists to prevent.
-// Returns how many competitors were cleared.
-async function clearRoster(env) {
-  let cleared = 0;
-  for (const prefix of ["user:", "left:"]) {
-    let cursor;
-    do {
-      const page = await env.ROSTER.list({ prefix, cursor });
-      await Promise.all(page.keys.map((k) => env.ROSTER.delete(k.name)));
-      if (prefix === "user:") cleared += page.keys.length;
-      cursor = page.list_complete ? undefined : page.cursor;
-    } while (cursor);
-  }
-  // Write the empty denormalized key directly instead of rebuildRoster(): KV deletes are
-  // eventually consistent, so a LIST right after the wipe can still hand back the keys we
-  // just deleted and resurrect the whole roster. Here the answer is known — it's empty.
-  await env.ROSTER.put(ROSTER_ALL, JSON.stringify([]));
-  return cleared;
+  const all = Array.isArray(cached) ? cached : await rebuildRoster(env); // cold start / first deploy
+  // The cache can still hold last week's entries — the sweep hasn't reached them, or a
+  // rebuild raced it. Filtered here, so the board is clear at the rollover no matter what KV
+  // holds, and a stuck cron can never carry a roster into the next week again.
+  return all.filter((e) => !staleEntry(e, sched));
 }
 
 // ---- Discord request-signature verification (Ed25519 via Web Crypto) ----
@@ -151,28 +163,23 @@ const truthy = (v) => /^(1|true|on|yes)$/i.test(String(v ?? "").trim());
 // Three states, all read off the site's canonical CME calendar so the bot and the board
 // can't drift:
 //
-//   "done"   Fri close → Sun 1pm PT   FROZEN. The week is finished and waiting to be
-//                                     cleared; nothing on the board may change.
-//   "pre"    Sun 1pm → 3pm PT         OPEN. The reset just wiped the board — join, and
-//                                     swap accounts as often as you like.
+//   "done"   Fri close → Sun 1pm PT   FROZEN. The week is finished; nothing on the board
+//                                     may change until it rolls over.
+//   "pre"    Sun 1pm → 3pm PT         OPEN. The board just rolled over to an empty week —
+//                                     join, and swap accounts as often as you like.
 //   live     Sun 3pm → Fri close      Joins open (unless LOCK_JOIN), swaps locked.
 //
-// The frozen weekend is what makes the reset honest. An entry written after Friday's close
-// is deleted by Sunday's wipe before it can ever score, so accepting one would be a lie —
-// the bot would say "you're on the board" and the board would disagree by Sunday evening.
-// Freezing also pins the finished week: the champion announced on Friday still matches the
-// standings on Sunday, because no join, swap or leave can move them in between.
-export function boardFrozen(now = new Date()) {
-  return weekSchedule(now).phase === "done";
-}
+// The frozen weekend is what makes the rollover honest. An entry written after Friday's
+// close would be last week's the moment Sunday rolls over — gone before it could ever score
+// — so accepting one would be a lie: the bot would say "you're on the board" and the board
+// would disagree by Sunday afternoon. Freezing also pins the finished week: the champion
+// announced on Friday still matches the standings on Sunday, because no join, swap or leave
+// can move them in between.
+//
+// Every command reads the phase once from weekSchedule(); the same schedule also carries the
+// rollover instant that decides which entries are stale (see "the week boundary").
 
-// The clean-slate window, right after the Sunday wipe: the only time an account SWAP is
-// allowed, since everyone is entering the new week from empty.
-export function registrationOpen(now = new Date()) {
-  return weekSchedule(now).phase === "pre";
-}
-
-// What every refusal during the freeze tells you to do. The wipe lands ~2h before the open.
+// What every refusal during the freeze tells you to do. The rollover is ~2h before the open.
 const COMES_BACK_SUNDAY =
   "The board **clears every Sunday**, about 2h before the open, and joining opens the moment it does — `/join` then with the account you want scored for the week.";
 
@@ -186,31 +193,40 @@ async function upsertLink(interaction, env, { updating }) {
   if (accountId == null) {
     return reply("❌ That doesn't look like a TopstepX share link. Copy it from your stats page — e.g. `https://topstepx.com/share/stats?share=24801853`.");
   }
-  // Checked before anything is read or written: between Friday's close and Sunday's wipe
+  const sched = weekSchedule(new Date());
+  // Checked before anything is read or written: between Friday's close and Sunday's rollover
   // there is no week to enter. Turning people away here is kinder than taking the entry
-  // and deleting it on Sunday — nobody loses a week over it, since a join any time during
+  // and dropping it on Sunday — nobody loses a week over it, since a join any time during
   // the live week still scores the full week (TopstepX reports P&L from the Sunday open,
   // not from when you joined).
-  if (boardFrozen()) {
+  if (sched.phase === "done") {
     return reply(`🧊 The week is finished and the board is frozen until it clears. ${COMES_BACK_SUNDAY}`);
   }
-  const existing = await env.ROSTER.get(rosterKey(u.id), "json");
+  // Last week's entry is not "existing" — it's gone at the rollover whether or not the sweep
+  // has deleted the key yet. Overwriting it below IS the cleanup, and the joiner is a fresh
+  // entrant: any account, and a joinedAt of today.
+  const found = await env.ROSTER.get(rosterKey(u.id), "json");
+  const existing = found && !staleEntry(found, sched) ? found : null;
   // /leave leaves a tombstone, so leaving and rejoining can't launder an account swap: a
   // trader having a bad week could otherwise /leave, /join a different (better) account,
   // and land as a "brand-new join" — which LOCK_JOIN lets through by design. The account
   // you entered the week on is the one you're scored on, however you re-enter.
-  const stale = existing ? null : await env.ROSTER.get(leftKey(u.id), "json");
+  const left = existing ? null : await env.ROSTER.get(leftKey(u.id), "json");
   // Only a tombstone from THIS week can gate a rejoin. One from a week you sat out is just
-  // history — you're a legitimate new entrant this week and may enter on any account.
-  const weekStart = new Date(weekSchedule(new Date()).weekStart).getTime();
-  const tomb = stale && new Date(stale.leftAt).getTime() >= weekStart ? stale : null;
+  // history — you're a legitimate new entrant this week and may enter on any account. And it
+  // has to record an entry INTO this week: leaving a carried-over entry (the 2026-08-17 trap,
+  // where the old /leave tombstoned last week's entry and the tombstone then pinned the
+  // trader to an account they'd reset over the weekend) pins nobody — that entry was never
+  // this week's. The tombstone carries the entry's own stamps, so staleEntry() judges it.
+  const weekStart = stamp(sched.weekStart);
+  const tomb = left && stamp(left.leftAt) >= weekStart && !staleEntry(left, sched) ? left : null;
   const priorAccount = existing?.accountId ?? tomb?.accountId ?? null;
   const isSwap = priorAccount != null && priorAccount !== accountId;
   const isNewJoin = !existing && !tomb;
   const gated = isSwap || (isNewJoin && truthy(env.LOCK_JOIN));
   // The freeze already returned above, so by here the week is either live (swaps locked)
-  // or in the post-wipe pre-open window (everything allowed).
-  if (gated && !registrationOpen()) {
+  // or in the pre-open window right after the rollover (everything allowed).
+  if (gated && sched.phase !== "pre") {
     if (isSwap && tomb) {
       return reply(`🔒 Leaving doesn't reset your account. You entered this week on account **${priorAccount}** — you can rejoin on that one, but not on a different account mid-week. ${COMES_BACK_SUNDAY}`);
     }
@@ -236,7 +252,7 @@ async function upsertLink(interaction, env, { updating }) {
     updatedAt: now
   };
   await env.ROSTER.put(rosterKey(u.id), JSON.stringify(entry));
-  if (stale) await env.ROSTER.delete(leftKey(u.id)); // they're back; clear it either way
+  if (left) await env.ROSTER.delete(leftKey(u.id)); // they're back; clear it either way
   await rebuildRoster(env);
   const shared = await isShared(accountId);
   if (!shared) {
@@ -253,14 +269,17 @@ const COMMANDS = {
 
   async mylink(interaction, env) {
     const u = userOf(interaction);
-    const entry = await env.ROSTER.get(rosterKey(u.id), "json");
+    const sched = weekSchedule(new Date());
+    const found = await env.ROSTER.get(rosterKey(u.id), "json");
+    const entry = found && !staleEntry(found, sched) ? found : null; // last week's = not on the board
     // During the freeze, "change it with /link" would be a promise the next command breaks.
-    const next = boardFrozen()
+    const frozen = sched.phase === "done";
+    const next = frozen
       ? `This was **last week's** entry — it clears on Sunday. ${COMES_BACK_SUNDAY}`
       : "Change it with `/link`, or `/leave` to drop out.";
     return entry
       ? reply(`🔎 You're tracked on account **${entry.accountId}**\n${entry.url}\n${next}`)
-      : reply(boardFrozen()
+      : reply(frozen
         ? `You're not on the board. ${COMES_BACK_SUNDAY}`
         : "You're not on the board yet. Add yourself with `/join <your TopstepX share link>`.");
   },
@@ -269,16 +288,30 @@ const COMMANDS = {
     const u = userOf(interaction);
     const existing = await env.ROSTER.get(rosterKey(u.id), "json");
     if (!existing) return reply("You weren't on the board.");
+    const sched = weekSchedule(new Date());
+    // Last week's entry, still in KV only because the sweep hasn't reached it. It was never an
+    // entry into THIS week, so no tombstone: one here would pin them to an account they never
+    // entered this week on — the exact trap of 2026-08-17, when a carried-over entry was left
+    // and the tombstone then blocked the rejoin on the account they'd actually moved to.
+    if (staleEntry(existing, sched)) {
+      await env.ROSTER.delete(rosterKey(u.id));
+      await rebuildRoster(env);
+      return reply("That was **last week's** entry — entries don't carry over, so you were already off the board. `/join` to enter this week.");
+    }
     // Frozen too, and for once the refusal costs nothing: the week is already scored, and
-    // Sunday's wipe drops you anyway. Deleting now would only rewrite a finished week's
+    // Sunday's rollover drops you anyway. Deleting now would only rewrite a finished week's
     // standings — after the champion has been announced off them.
-    if (boardFrozen()) {
+    if (sched.phase === "done") {
       return reply(`🧊 The week is finished, so there's nothing left to drop out of — and the board is frozen until it clears on Sunday. **You're out by default**: entries don't carry over, so just don't \`/join\` next week.`);
     }
     await env.ROSTER.delete(rosterKey(u.id));
-    // Remember the account they entered on (see leftKey) so rejoining can't swap it.
+    // Remember the account they entered on (see leftKey) so rejoining can't swap it. The
+    // entry's own joinedAt/updatedAt ride along so /join can tell a this-week tombstone
+    // from one left over from a carried-over entry (same staleEntry() test as the entry).
     await env.ROSTER.put(leftKey(u.id), JSON.stringify({
-      discordId: u.id, accountId: existing.accountId, joinedAt: existing.joinedAt ?? existing.updatedAt, leftAt: new Date().toISOString()
+      discordId: u.id, accountId: existing.accountId,
+      joinedAt: existing.joinedAt ?? existing.updatedAt, updatedAt: existing.updatedAt,
+      leftAt: new Date().toISOString()
     }));
     await rebuildRoster(env);
     return reply(`👋 Removed you from the board. You can rejoin anytime with \`/join\` — during a live week it has to be the same account (**${existing.accountId}**).`);
@@ -378,9 +411,11 @@ export function championEmbed(podium, env) {
 // Returns { ok, why }; `why` carries Discord's own error so a failed /announce says what's
 // actually wrong instead of listing everything that might be.
 async function postToChannel(env, payload) {
+  // `configured: false` means there is nowhere to post — announcements are switched off, not
+  // failing — so the cron jobs mark their week done instead of retrying every fire.
   const webhook = (env.ANNOUNCE_WEBHOOK_URL || "").trim();
-  if (!webhook && !env.DISCORD_BOT_TOKEN) return { ok: false, why: "neither `ANNOUNCE_WEBHOOK_URL` nor `DISCORD_BOT_TOKEN` is set on the Worker" };
-  if (!webhook && !env.ANNOUNCE_CHANNEL_ID) return { ok: false, why: "`ANNOUNCE_CHANNEL_ID` is blank in `wrangler.toml`" };
+  if (!webhook && !env.DISCORD_BOT_TOKEN) return { ok: false, configured: false, why: "neither `ANNOUNCE_WEBHOOK_URL` nor `DISCORD_BOT_TOKEN` is set on the Worker" };
+  if (!webhook && !env.ANNOUNCE_CHANNEL_ID) return { ok: false, configured: false, why: "`ANNOUNCE_CHANNEL_ID` is blank in `wrangler.toml`" };
   const url = webhook
     ? `${webhook}?wait=true` // ?wait=true so Discord reports failures instead of a blind 204
     : `https://discord.com/api/v10/channels/${env.ANNOUNCE_CHANNEL_ID}/messages`;
@@ -427,68 +462,145 @@ export const announcedKey = (sched) => `announced:${String(sched.weekStart).slic
 
 // Once per week, after Friday's close, crown the champion. Idempotent: a KV marker per
 // week means repeated cron fires (or a redeploy) never double-post.
-async function announceChampion(env) {
-  const sched = weekSchedule(new Date());
+async function announceChampion(env, sched) {
   if (sched.phase !== "done") return; // week still running (or pre-season)
   const marker = announcedKey(sched);
   if (await env.ROSTER.get(marker)) return; // already crowned this week
   const podium = pickPodium((await fetchStandings(env))?.rows);
   if (!podium.length) { await env.ROSTER.put(marker, "1"); return; } // nobody to crown; don't retry
-  const { ok } = await postToChannel(env, { embeds: [championEmbed(podium, env)] });
-  if (ok) await env.ROSTER.put(marker, "1"); // only mark done on a real post, so a fixable failure retries next hour
+  const { ok, configured, why } = await postToChannel(env, { embeds: [championEmbed(podium, env)] });
+  // Only mark done on a real post (or when announcements are off), so a fixable failure retries next fire.
+  if (ok || configured === false) await env.ROSTER.put(marker, "1");
+  else console.error(`announce: champion post failed, will retry: ${why}`);
+  console.log(`announce: ${ok ? "posted" : "did not post"} champion for week ${marker.slice(10)} (${podium[0].name})`);
 }
 
-// ---- Sunday reset ----
+// ---- Sunday rollover: sweep + notice ----
 //
-// Entries are good for one week. Every Sunday, in the two-hour pre-open window the board
-// already rolls over in (1pm PT -> the 3pm CME open), the roster is wiped so the new week
-// starts empty. Without it, last week's link carries into the new week and the mid-week
-// swap lock then freezes it there: a trader who changed accounts over the weekend, or
-// whose share went private, is stuck on a dead entry until Friday's close with no command
-// that can fix it. Clearing costs a `/join` — it never costs someone a week.
+// Entries are good for one week. At the Sunday 1pm PT rollover every entry written before it
+// is last week's and is already inert (see "the week boundary" above): the cron's job here is
+// to delete the dead keys and post the "new week — the board is clear" notice. Neither gates
+// anything, so unlike the original reset this doesn't need to land in the two-hour pre-open
+// window: it runs on the first fire after the rollover that gets through, whenever that is,
+// and until then the board is clear anyway.
 //
-// The window is deliberately the only time this fires. A wipe during a live week would
-// erase a real field mid-competition, so if every fire in the window is somehow missed the
-// board just carries over for a week — the old behaviour, not a new failure — and the next
-// Sunday clears it. Carrying over is recoverable; deleting a live field is not.
+// The sweep is idempotent and stale-only — it never touches an entry written for the current
+// week — so it is safe to run late, to run twice, and to fail halfway and be retried. That is
+// the property the original lacked: it CLAIMED the week (wrote its marker) before wiping so a
+// second pass couldn't delete fresh joiners, which meant a fire that died between the claim
+// and the wipe silently forfeited the week — the roster carried over and every later fire
+// saw "already cleared". Here the marker is written only after the sweep completes, and it
+// records what was cleared, not a claim.
+//
+// Budget: the free plan allows 50 subrequests per invocation and KV calls count. Each key
+// costs a GET (to read its timestamp) and, if stale, a DELETE, so a fire sweeps at most
+// SWEEP_KEYS keys and leaves the rest for the next fire ten minutes later. Worst case for a
+// fire is 2·SWEEP_KEYS + 7 (two LISTs, the markers, the Discord post) = 39. Rosters this
+// size finish in one fire; a runaway one still converges.
 export const clearedKey = (sched) => `cleared:${String(sched.weekStart).slice(0, 10)}`;
+export const noticedKey = (sched) => `noticed:${String(sched.weekStart).slice(0, 10)}`;
+const SWEEP_KEYS = 16;
 
-export function newWeekEmbed(env) {
+export function newWeekEmbed(env, sched, { late = false } = {}) {
+  const board = `[Board](${siteBase(env)})`;
+  if (!late) {
+    return {
+      title: "🧹 New week — the board is clear",
+      description:
+        "Last week's entries are gone and **joining is open now**. Run `/join <your TopstepX share link>` to enter.\n\n" +
+        "Until the open you can `/link` a different account freely. After that, swaps lock for the week — so enter on the account you actually want scored.\n\n" +
+        board,
+      color: 0x5865f2
+    };
+  }
+  // The week is already live: the notice is late (the pre-open fires were missed, or this
+  // is a fresh deploy mid-week). Anyone who was on last week's board and assumed they'd
+  // carried over needs to know to rejoin — a join now still scores the full week — and
+  // swaps are already locked. Worded to read right even if nobody was on last week's board.
   return {
-    title: "🧹 New week — the board is clear",
+    title: "🧹 New week — the board has rolled over",
     description:
-      "Last week's entries are gone and **joining is open now**. Run `/join <your TopstepX share link>` to enter.\n\n" +
-      "Until the open you can `/link` a different account freely. After that, swaps lock for the week — so enter on the account you actually want scored.\n\n" +
-      `[Board](${siteBase(env)})`,
+      "Entries don't carry over between weeks. If you were on **last week's** board and want to compete this week, run `/join <your TopstepX share link>` again — a join now still scores the whole week.\n\n" +
+      "The week is live, so enter on the account you want scored: swaps are locked until Sunday.\n\n" +
+      board,
     color: 0x5865f2
   };
 }
 
-async function resetForNewWeek(env) {
-  const sched = weekSchedule(new Date());
-  if (sched.phase !== "pre") return;
-  const marker = clearedKey(sched);
-  if (await env.ROSTER.get(marker)) return; // already cleared this week
-  // Claim the week BEFORE wiping, not after: joining reopens the instant the board empties,
-  // so a second pass — an overlapping cron fire, a retry after a slow post — would delete
-  // whoever entered in between. If the wipe itself fails, drop the claim so the next fire
-  // retries rather than leaving the week marked done with last week's roster still on it.
-  await env.ROSTER.put(marker, "1");
-  try {
-    await clearRoster(env);
-  } catch (e) {
-    await env.ROSTER.delete(marker);
-    throw e;
+// Delete last week's keys, up to SWEEP_KEYS of them. Returns how many competitor entries
+// were removed and whether anything is left for a later fire. list() is asked for only as
+// many keys as there is budget for, so a page can't overrun it, and its cursor/list_complete
+// say whether more remain. Keys that list() still reports but that are already gone (KV
+// lists are eventually consistent, and a previous fire may just have deleted them) read as
+// null: deleted again harmlessly, not counted.
+async function sweepLastWeek(env, sched) {
+  let cleared = 0;
+  let room = SWEEP_KEYS;
+  let complete = true;
+  for (const [prefix, stale] of [["user:", staleEntry], ["left:", staleTomb]]) {
+    let cursor;
+    do {
+      if (room <= 0) { complete = false; break; } // budget spent; the rest waits for the next fire
+      const page = await env.ROSTER.list({ prefix, cursor, limit: room });
+      room -= page.keys.length;
+      await Promise.all(page.keys.map(async (k) => {
+        let value = null;
+        try {
+          value = await env.ROSTER.get(k.name, "json");
+        } catch {
+          /* unparsable — nothing this bot wrote; treat as dead */
+        }
+        if (value && !stale(value, sched)) return; // this week's — keep
+        await env.ROSTER.delete(k.name);
+        if (value && prefix === "user:") cleared++;
+      }));
+      cursor = page.list_complete ? undefined : page.cursor;
+      if (cursor && room <= 0) complete = false;
+    } while (cursor && room > 0);
   }
-  await postToChannel(env, { embeds: [newWeekEmbed(env)] });
+  return { cleared, complete };
+}
+
+async function rollOverWeek(env, sched) {
+  // Between Friday's close and Sunday's rollover the finished week is still the board, by
+  // design (frozen, matching the announced champion). Nothing to do until it rolls over.
+  if (sched.phase === "done") return;
+  const week = String(sched.weekStart).slice(0, 10);
+  // Sweep until it completes. The marker is written only then, and holds the last fire's
+  // count — a debugging breadcrumb (`cleared:2026-08-16 = "3"`), nothing branches on it.
+  if ((await env.ROSTER.get(clearedKey(sched))) == null) {
+    const r = await sweepLastWeek(env, sched);
+    console.log(`rollover: swept ${r.cleared} stale entr${r.cleared === 1 ? "y" : "ies"} for week ${week}${r.complete ? "" : " (more next fire)"}`);
+    if (!r.complete) return;
+    await env.ROSTER.put(clearedKey(sched), String(r.cleared));
+  }
+  // Then the notice, once. In the pre-open window it's the weekly "board is clear — /join";
+  // any later and the pre-open fires were missed (or this is a fresh deploy mid-week), so it
+  // says so and tells last week's field to rejoin. Tracked separately from the sweep so a
+  // Discord hiccup retries the post (1 read + 1 fetch a fire) without re-running the
+  // sweep's LISTs every ten minutes.
+  if (await env.ROSTER.get(noticedKey(sched))) return;
+  const late = sched.phase !== "pre";
+  const { ok, configured, why } = await postToChannel(env, { embeds: [newWeekEmbed(env, sched, { late })] });
+  if (!ok && configured !== false) {
+    console.error(`rollover: new-week notice failed, will retry: ${why}`);
+    return;
+  }
+  await env.ROSTER.put(noticedKey(sched), "1");
+  console.log(`rollover: ${ok ? "posted" : "skipped (announcements off)"} ${late ? "late " : ""}new-week notice for week ${week}`);
 }
 
 export default {
   async scheduled(event, env, ctx) {
-    // Phase-exclusive: the champion posts after Friday's close ("done"), the reset fires in
-    // Sunday's pre-open window ("pre"). Both self-gate, so every cron fire can run both.
-    ctx.waitUntil(announceChampion(env));
-    ctx.waitUntil(resetForNewWeek(env));
+    // Phase-exclusive: the champion posts after Friday's close ("done"), the rollover sweep
+    // and notice run any time after Sunday's rollover ("pre" or live). Both self-gate on
+    // KV markers, so every cron fire runs both; the steady-state cost of a fire is 2 reads.
+    // One schedule per fire: it's the costly call here (Intl) and the 10 ms free-plan CPU
+    // budget applies to cron fires too. Failures are logged rather than swallowed — enable
+    // observability in wrangler.toml to see them in the dashboard.
+    const sched = weekSchedule(new Date());
+    ctx.waitUntil(announceChampion(env, sched).catch((e) => console.error("announce failed:", e)));
+    ctx.waitUntil(rollOverWeek(env, sched).catch((e) => console.error("rollover failed:", e)));
   },
 
   async fetch(request, env, ctx) {
@@ -505,7 +617,7 @@ export default {
       const cache = caches.default;
       const hit = await cache.match(request);
       if (hit) return hit;
-      const roster = await readRoster(env);
+      const roster = await readRoster(env, weekSchedule(new Date()));
       const res = new Response(JSON.stringify(roster), {
         headers: { ...JSON_HEADERS, ...CORS, "cache-control": "public, max-age=60, s-maxage=60" }
       });
