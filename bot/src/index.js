@@ -6,6 +6,7 @@
 //   POST /           Discord interactions endpoint (the slash commands)
 //   GET  /roster     public JSON the leaderboard site reads (CORS: *)
 //   GET|POST /feed/<id>  stats feeds for accounts TopstepX can't share (see "performance feeds")
+//   GET  /health/discord  whether the champion post's bot token and channel still work
 //
 // The roster lives in a KV namespace (binding ROSTER), one key per competitor:
 //   user:<discordId> -> { discordId, name, url, accountId, joinedAt, updatedAt }
@@ -589,6 +590,44 @@ async function postToChannel(env, payload) {
   return { ok: false, why };
 }
 
+// GET /health/discord: can the champion post still go out? Checks the stored bot token with
+// Discord and that the bot can see the announcements channel, without posting anything. A
+// visible channel doesn't prove Send Messages / Embed Links; a post that lacks them fails with
+// 50013. Cached for 5 minutes under one key whatever the query string, so the URL can't be used
+// to spend the bot's Discord rate limit.
+async function discordHealth(request, env, ctx) {
+  const cache = caches.default;
+  const key = new Request(new URL("/health/discord", request.url));
+  const hit = await cache.match(key);
+  if (hit) return hit;
+  const webhook = (env.ANNOUNCE_WEBHOOK_URL || "").trim();
+  const result = {
+    checkedAt: new Date().toISOString(),
+    announceRoute: webhook ? "webhook" : env.DISCORD_BOT_TOKEN ? "bot token" : "none"
+  };
+  if (!env.DISCORD_BOT_TOKEN) {
+    result.token = "not set";
+  } else {
+    const headers = { authorization: `Bot ${env.DISCORD_BOT_TOKEN}` };
+    const me = await fetch("https://discord.com/api/v10/users/@me", { headers });
+    result.token = me.ok ? "ok" : `rejected by Discord (${me.status})`;
+    if (me.ok) result.bot = (await me.json()).username;
+    if (me.ok && env.ANNOUNCE_CHANNEL_ID) {
+      const channel = await fetch(`https://discord.com/api/v10/channels/${env.ANNOUNCE_CHANNEL_ID}`, { headers });
+      let code = "";
+      if (!channel.ok) {
+        try { code = `, code ${(await channel.json()).code}`; } catch {}
+      }
+      result.announceChannel = channel.ok ? "visible" : `not visible (${channel.status}${code})`;
+    }
+  }
+  const res = new Response(JSON.stringify(result), {
+    headers: { ...JSON_HEADERS, "cache-control": "public, max-age=300, s-maxage=300" }
+  });
+  ctx.waitUntil(cache.put(key, res.clone()));
+  return res;
+}
+
 // The once-per-week idempotency key. Deliberately the DATE only: a full ISO timestamp is
 // hostage to any drift in how weekStart is computed, and the cron fires ~49 times between
 // Friday's close and Sunday's open — a key that fails to match means 49 champion posts.
@@ -758,6 +797,8 @@ export default {
       ctx.waitUntil(cache.put(request, res.clone()));
       return res;
     }
+
+    if (request.method === "GET" && url.pathname === "/health/discord") return discordHealth(request, env, ctx);
 
     const feed = url.pathname.match(FEED_PATH);
     if (feed && request.method === "GET") return serveFeed(request, env, ctx, feed[1]);
