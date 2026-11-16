@@ -14,10 +14,10 @@ Traders manage themselves in the server:
 
 | Command | What it does |
 | --- | --- |
-| `/join <share link>` | Join, or update your link |
-| `/link <share link>` | Swap your account (Sunday, after the rollover) |
-| `/mylink` | Show what's on file for you |
-| `/leave` | Drop out |
+| `/join <share link>` | Join, or add another account (up to 3, before the open) |
+| `/link <share link> [replace]` | Swap an account; `replace` names which one if you have several |
+| `/mylink` | Show the accounts on file for you |
+| `/leave [link]` | Drop out, or drop just the account you link |
 | `/leaderboard` | Link to the live board |
 | `/remove <user>` | **Organizer only** — prune someone |
 
@@ -28,16 +28,14 @@ All replies are **ephemeral** (only the person running the command sees them), s
 | When | State | What works |
 | --- | --- | --- |
 | Fri close → **Sun ~1pm PT** | 🧊 **Frozen** | Nothing changes. `/join`, `/link` and `/leave` all refuse. |
-| Sun ~1pm → **3pm PT** (the rollover) | 🧹 **Open** | Board rolls over to an empty week, joining reopens, swap accounts freely. |
-| Sun 3pm → Fri close | 🏁 **Live** | Joining open (unless `LOCK_JOIN`), swaps 🔒 locked. |
+| Sun ~1pm → **3pm PT** (the rollover) | 🧹 **Open** | Entries carried over, idle accounts dropped. Join, add, swap and drop accounts freely. |
+| Sun 3pm → Fri close | 🏁 **Live** | First joins open (unless `LOCK_JOIN`). Traded accounts 🔒 set; untraded ones can be swapped or dropped. |
 
-**The board clears every Sunday.** Entries are good for one week. At the Sunday 1pm PT rollover — the same instant the board flips to the new week — every entry written before it is last week's, and the bot treats it as gone from that moment: `/roster` stops serving it, `/join` writes over it as a fresh entry, `/mylink` and `/leave` don't see it. A cron then sweeps the dead keys and posts a "new week — the board is clear" notice, so everyone enters the week with `/join` and the link they actually want scored. The sweep is housekeeping, not the gate: the board is clear at the rollover whether or not the cron has run yet.
+**Entries carry over.** An entry stays on the board week to week. At the Sunday 1pm PT rollover every account that didn't trade in the week just finished drops off, and the bot treats it as gone from that instant: `/roster` stops serving it and the commands don't see it. Which accounts traded is recorded after Friday's close from the first clean post-close `data/leaderboard.json` (`active:<weekStart>` in KV); a scrape with any unread account is skipped, and if none lands all weekend nothing is pruned. A cron then prunes the keys and posts a "new week — entries carried over" notice. The prune is housekeeping, not the gate.
 
-That's what makes the swap lock safe. Without it, last week's entry carries into the new week and then freezes: someone who moved accounts over the weekend, or whose share link went private, would be stuck on a dead entry until Friday's close with no command able to fix it.
+**Picking accounts after the fact is what's locked.** TopstepX scores every account from the Sunday open, whenever it was entered. So once the week is live, a person can't add another account, and an account that has traded this week can't be swapped or dropped. An account with **no trades yet** this week can be swapped (`/link`) or dropped (`/leave` with its link) — it has no result to protect, the same exposure as a late first join — which is what keeps a trader who reset their account over the weekend from being stuck (the 2026-08-16 problem). The bot checks TopstepX directly; if it can't read the account it refuses the change. Dropping out entirely is always allowed, and a rejoin during the same week brings back every account you left with. **Brand-new late joins stay open** by default; set `LOCK_JOIN = "true"` in `wrangler.toml` to close those during the week too.
 
-**The weekend is frozen, not open.** Between Friday's close and Sunday's rollover there is no week to enter — anything written then would be last week's the moment Sunday rolls over, gone before it could score, so taking the entry would be a lie. Freezing also pins the finished week: the champion announced on Friday still matches the standings on Sunday, because no join, swap or leave can move them in between. Nobody loses anything by waiting, because **a join during the live week still scores the full week** — TopstepX reports P&L from the Sunday open, not from when you joined.
-
-**Swaps lock during the live week.** Once the trading week is live (Sun open → Fri close), you can't switch to a different account — `/link` (or a re-`/join` with a new account) replies with a 🔒 notice. Account changes reopen at Sunday's rollover. **Brand-new late joins stay open** by default (friendly to stragglers); set `LOCK_JOIN = "true"` in `wrangler.toml` to close those during the week too. `/mylink` and `/leaderboard` work anytime.
+**The weekend is frozen.** Freezing pins the finished week: the champion announced on Friday still matches the standings on Sunday, because no join, swap or leave can move them in between.
 
 ---
 
@@ -126,19 +124,19 @@ Have the bot post the winner into a channel after Friday's close:
 
 A cron fires every 10 minutes and self-gates, so it posts the champion **exactly once** after Friday's CME close (idempotent via a per-week KV marker), pulling standings from the published `data/leaderboard.json`. Leave `ANNOUNCE_CHANNEL_ID` blank to keep it off.
 
-The same channel gets the Sunday "board is clear" notice — the rollover happens whether or not a channel is configured, so a blank `ANNOUNCE_CHANNEL_ID` only costs the heads-up.
+The same channel gets the Sunday "entries carried over" notice — the rollover happens whether or not a channel is configured, so a blank `ANNOUNCE_CHANNEL_ID` only costs the heads-up. `curl https://<worker>/health/discord` checks the stored bot token and channel access without posting.
 
 ### 9. The Sunday rollover
 
-Nothing to configure — it rides the same cron as the champion post (`*/10 * * * *`). What clears the board is the **clock**, not the cron: every entry carries an `updatedAt`, and from the Sunday 1pm PT rollover on, anything written before it is last week's and is treated as gone by every read and command. The cron's job is the cleanup — delete last week's keys and post the notice — and it does that on the first fire after the rollover that gets through, tracked by `cleared:<weekStart>` (the sweep, holds how many entries it dropped) and `noticed:<weekStart>` (the post) KV markers. The sweep is idempotent and only ever touches last week's keys, so it can run late, run twice, or fail halfway and be retried; a fire in the live week that finds the markers missing sweeps and posts a "board has rolled over — rejoin" notice instead of the pre-open one. At steady state a fire costs two KV reads.
+Nothing to configure — it rides the same cron as the champion post (`*/10 * * * *`). What drops idle accounts is the **clock plus the recorded activity**, not the cron: from the Sunday 1pm PT rollover on, every read and command hides an account that isn't in the finished week's `active:` record and wasn't entered since the rollover. The cron's job is the cleanup — prune those accounts and last week's `/leave` tombstones, then post the notice — on the first fire after the rollover that gets through, tracked by `cleared:<weekStart>` (holds how many accounts it pruned) and `noticed:<weekStart>` (the post). The prune is idempotent, so it can run late, run twice, or fail halfway and be retried. At steady state a fire costs two KV reads.
 
-That design replaced one where a single wipe had to land cleanly inside the two-hour pre-open window, and claimed its marker *before* wiping so a second pass couldn't delete fresh joiners. On 2026-08-16 it didn't land: the roster carried into the live week, the swap lock froze it there, and a trader who'd reset their account over the weekend was stuck on a dead entry with no way out (`/leave` tombstoned it, so leaving didn't help). Under the current design a missed or half-finished fire changes nothing for the board — the entries are already stale — and `/leave` on a carried-over entry writes no tombstone. A tombstone that *was* left from a carried-over entry (written before this fix, or by any future regression) gates nothing either: `/join` checks that the tombstone records an entry into *this* week before treating a different account as a swap, so the stuck trader just runs `/join` on the new account.
+The board used to clear every Sunday, and before that a single wipe had to land inside the two-hour pre-open window. On 2026-08-16 it didn't: the roster carried into the live week, the swap lock froze it there, and a trader who'd reset their account over the weekend was stuck on a dead entry. Carry-over avoids that two ways: nothing waits on a cron fire, and an account with no trades yet can always be swapped or dropped.
 
 Don't try to narrow that cron to Sundays: Cloudflare's day-of-week field is `1-7` or `SUN-SAT`, so `*/10 * * * 0` returns a **400 and the entire schedules update fails** — which deploys new code with no triggers behind it, the worst of both.
 
-**Deploying mid-week** takes effect immediately: any entry still on the board from a previous week drops off at once (it was already stale) and the sweep posts the rejoin notice on the next fire. If you'd rather not disturb a live week, deploy Sunday after 1pm PT — but avoid deploying between Friday's close and Sunday's rollover in a week where last week's entries carried over, because they'd vanish from the frozen board the champion was announced from.
+**Deploying mid-week** is safe: entries and accounts are unchanged, and pruning only ever applies at a rollover from a recorded week.
 
-**There is no manual `/reset`.** Nothing needs one: the board clears itself at the rollover and the sweep retries on its own. Use `/remove` to prune individuals — it also clears their `/leave` tombstone, which is how you free someone stuck on a swap lock.
+**There is no manual `/reset`.** Nothing needs one: idle accounts drop off at the rollover and the prune retries on its own. Use `/remove` to prune individuals — it also clears their `/leave` tombstone.
 
 **Logs.** `[observability] enabled = true` in `wrangler.toml` turns on Workers Logs; every cron fire logs what it did (phase, entries swept, notice/champion posted or why not). Read them in the dashboard under the Worker → Logs when a Sunday looks wrong.
 

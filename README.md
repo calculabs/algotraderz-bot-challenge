@@ -76,16 +76,17 @@ that roster over the `participants.json` seed via `src/roster.mjs` (set `ROSTER_
 to the deployed Worker's `/roster` URL). The site's ⚙ **Manage** panel just shows the
 commands + current roster. See [`bot/README.md`](bot/README.md) for setup.
 
-**Entries last one week.** A bot cron clears the roster every Sunday in the pre-open window
-(1pm → 3pm PT) and posts a notice, so the new week starts from an empty board. Account
-swaps lock once the week is live, so without the clear last week's link would carry over
-*and* be frozen there — a moved account or a share link turned private would be stuck for
-the whole week. Re-`/join` each week with the account you want scored.
+**Entries carry over.** Once you're in, you stay in from week to week. At the Sunday
+rollover (1pm PT, 2h before the open) an account that didn't trade in the week just finished
+drops off; `/join` brings it back. One person can enter up to 3 accounts, each ranked on its
+own, and hold at most `challenge.podiumMaxPerPerson` podium spots (2 for now). New accounts go
+in before the open; once the week is live an account that has traded is set until Friday's
+close, while one with no trades yet can still be swapped or dropped. A late first join is
+still scored on the whole week, since TopstepX reports P&L from the Sunday open.
 
-Between Friday's close and that clear the board is **frozen** — `/join`, `/link` and
-`/leave` all refuse, because anything written in that window is wiped before it can score,
-and the finished week has to keep matching the champion already announced from it. Waiting
-costs nothing: a join at any point in the live week is still scored on the whole week.
+Between Friday's close and the rollover the board is **frozen** — `/join`, `/link` and
+`/leave` all refuse, because the finished week has to keep matching the champion already
+announced from it.
 
 To pin a fixed competition window instead of the live week, add ISO `weekStart` / `weekEnd`
 to `challenge`. Override the account-size tiers with `challenge.accountSizes` if needed.
