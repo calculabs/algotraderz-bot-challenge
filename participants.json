@@ -8,5 +8,10 @@
       "Max loss limit"
     ]
   },
-  "participants": []
+  "participants": [
+    {
+      "name": "zandobot",
+      "url": "https://calculabs.github.io/algotraderz-bot-challenge/share.html?feed=zandobot"
+    }
+  ]
 }

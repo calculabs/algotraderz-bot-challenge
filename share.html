@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Shared Stats · Algo Traderz</title>
+  <style>
+    :root {
+      --bg-0: #060a14;
+      --bg-1: #0a1122;
+      --card: rgba(255, 255, 255, 0.028);
+      --card-border: rgba(255, 255, 255, 0.07);
+      --ink: #eef2f8;
+      --muted: #6f8097;
+      --muted-dim: #47566b;
+      --green: #34d399;
+      --red: #f77066;
+      --gold: #f4c04f;
+      --blue: #7fa9ff;
+      font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      background:
+        radial-gradient(120% 60% at 50% -8%, rgba(94, 132, 214, 0.20), transparent 60%),
+        linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 40%);
+      color: var(--ink);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+    .page { max-width: 720px; margin: 0 auto; padding: 40px 16px 56px; }
+    header { text-align: center; }
+    .org { color: var(--blue); font-weight: 700; font-size: 13px; letter-spacing: .32em; text-transform: uppercase; margin-bottom: 14px; }
+    h1 {
+      margin: 0; font-size: clamp(34px, 5vw, 46px); font-weight: 800; letter-spacing: -.02em; line-height: .95;
+      background: linear-gradient(180deg, #ffffff, #cdd7e6); -webkit-background-clip: text; background-clip: text; color: transparent;
+      overflow-wrap: anywhere;
+    }
+    .chips { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 16px; }
+    .chip { border: 1px solid var(--card-border); background: rgba(255,255,255,.03); color: #9fb0c6; border-radius: 99px; padding: 6px 12px; font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+    .chip.live { color: var(--green); border-color: rgba(52,211,153,.3); }
+    .chip.stale { color: var(--gold); border-color: rgba(244,192,79,.35); }
+
+    .panel { border: 1px solid var(--card-border); background: var(--card); border-radius: 20px; padding: 18px 20px; margin-top: 16px; }
+    .panel h2 { margin: 0 0 14px; color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+    .hero { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 16px; margin-top: 28px; }
+    .hero .panel { margin-top: 0; text-align: center; }
+    .hero .big { font-size: clamp(24px, 4.4vw, 32px); font-weight: 800; letter-spacing: -.01em; white-space: nowrap; }
+    .hero .k { color: var(--muted-dim); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; margin-bottom: 8px; }
+
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+    .kpi { border: 1px solid var(--card-border); background: rgba(255,255,255,.02); border-radius: 14px; padding: 12px 14px; min-width: 0; }
+    .kpi .k { color: var(--muted-dim); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; }
+    .kpi .v { margin-top: 6px; font-size: 18px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .kpi .s { margin-top: 2px; color: var(--muted); font-size: 12px; }
+
+    .week { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+    .week .ret { font-size: 22px; font-weight: 800; }
+    .dd { margin-top: 14px; }
+    .dd-bar { height: 6px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; }
+    .dd-bar > span { display: block; height: 100%; border-radius: 99px; background: var(--green); }
+    .dd.warn .dd-bar > span { background: var(--gold); }
+    .dd.danger .dd-bar > span { background: var(--red); }
+    .dd-label { margin-top: 6px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+
+    .curve svg { display: block; width: 100%; height: auto; }
+    .curve .axis { fill: var(--muted-dim); font-size: 10px; font-weight: 600; }
+
+    .cal { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+    .cal .hd { color: var(--muted-dim); font-size: 10.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; text-align: center; padding-bottom: 2px; }
+    .cell { border: 1px solid var(--card-border); border-radius: 10px; padding: 8px 6px; min-height: 62px; background: rgba(255,255,255,.015); text-align: center; min-width: 0; }
+    .cell .d { color: var(--muted-dim); font-size: 11px; font-weight: 700; }
+    .cell .p { margin-top: 4px; font-size: 13px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cell .t { color: var(--muted); font-size: 10.5px; margin-top: 1px; }
+    .cell.win { background: rgba(52,211,153,.07); border-color: rgba(52,211,153,.22); }
+    .cell.loss { background: rgba(247,112,102,.07); border-color: rgba(247,112,102,.22); }
+    .cell.today { box-shadow: inset 0 0 0 1px rgba(244,192,79,.55); }
+    .cell.none { opacity: .45; }
+
+    .pos { color: var(--green); } .neg { color: var(--red); } .zero { color: var(--muted); }
+    .note { text-align: center; color: var(--muted-dim); font-size: 12.5px; margin-top: 18px; line-height: 1.5; }
+    footer { text-align: center; margin-top: 20px; }
+    footer a { color: var(--blue); font-weight: 700; font-size: 13px; letter-spacing: .08em; text-decoration: none; }
+    .empty { text-align: center; color: var(--muted); padding: 60px 0; line-height: 1.6; }
+    @media (max-width: 420px) { .hero { grid-template-columns: minmax(0,1fr); } .cell .p { font-size: 11.5px; } }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div class="org">Algo Traderz</div>
+      <h1 id="name">Shared stats</h1>
+      <div class="chips" id="chips"></div>
+    </header>
+    <main id="main"><div class="empty">Loading…</div></main>
+    <p class="note" id="note"></p>
+    <footer><a href="./">← Bot Challenge standings</a></footer>
+  </div>
+
+  <script type="module">
+    import { fetchFeed, parseFeedId } from "./src/feed-api.mjs";
+    import { weekSchedule } from "./src/calendar.mjs";
+    import { computeMetrics, MLL_BY_SIZE } from "./src/leaderboard.mjs";
+
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const money = (n, { sign = false, dp = 2 } = {}) => {
+      if (n == null || !Number.isFinite(Number(n))) return "—";
+      const v = Number(n);
+      const abs = Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp });
+      if (v === 0) return "$" + abs;
+      return (v > 0 ? (sign ? "+" : "") : "-") + "$" + abs;
+    };
+    const pct = (n, { sign = false } = {}) => (n == null || !Number.isFinite(n) ? "—" : (sign && n > 0 ? "+" : "") + n.toFixed(2) + "%");
+    const cls = (n) => (n > 0 ? "pos" : n < 0 ? "neg" : "zero");
+    const net = (r) => (Number(r.totalPnL) || 0) - (Number(r.totalFees) || 0) - (Number(r.totalCommissions) || 0);
+    const dateOf = (r) => String(r.tradeDay).slice(0, 10);
+    const niceDate = (iso, opts = { weekday: "short", month: "short", day: "numeric" }) =>
+      new Date(iso + "T12:00:00Z").toLocaleDateString(undefined, { timeZone: "UTC", ...opts });
+    const ago = (iso) => {
+      const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
+      if (s < 90) return "just now";
+      if (s < 3600) return `${Math.round(s / 60)} min ago`;
+      if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+      return `${Math.round(s / 86400)} d ago`;
+    };
+
+    const FEED = parseFeedId(location.href);
+
+    // Account-lifetime figures, the way TopstepX's share stats present them. Per-trade figures
+    // (win rate, profit factor, average win/loss) are gross, like TopstepX's; P&L is net of fees.
+    function lifetime(doc) {
+      const rows = doc.daily;
+      const sum = (f) => rows.reduce((a, r) => a + (Number(r[f]) || 0), 0);
+      const nets = rows.map((r) => ({ date: dateOf(r), net: net(r) }));
+      const wins = sum("winningTrades");
+      const losses = sum("losingTrades");
+      const profit = sum("totalProfit");
+      const loss = sum("totalLoss");
+      const best = nets.reduce((a, d) => (a == null || d.net > a.net ? d : a), null);
+      const worst = nets.reduce((a, d) => (a == null || d.net < a.net ? d : a), null);
+      const balance = rows.length ? Number(rows[rows.length - 1].balance) : doc.startBalance;
+      return {
+        balance,
+        pnl: balance - doc.startBalance,
+        trades: sum("totalTrades"),
+        winRate: wins + losses ? (100 * wins) / (wins + losses) : null,
+        profitFactor: loss < 0 ? profit / -loss : null,
+        avgWin: wins ? profit / wins : null,
+        avgLoss: losses ? loss / losses : null,
+        best, worst,
+        days: rows.length,
+        dayWinRate: rows.length ? (100 * nets.filter((d) => d.net > 0).length) / rows.length : null,
+        fees: sum("totalFees") + sum("totalCommissions")
+      };
+    }
+
+    function weekView(doc, sched) {
+      const start = Date.parse(sched.weekStart);
+      const end = Date.parse(sched.weekEnd);
+      const inWeek = (r) => { const t = Date.parse(r.tradeDay); return t >= start && t < end; };
+      const stats = { accountName: doc.accountName, daily: doc.daily.filter(inWeek), todaystats: doc.todaystats.filter(inWeek), intradayLows: doc.intradayLows };
+      return computeMetrics(stats, sched.days, { currentDay: sched.currentDay });
+    }
+
+    function curveSvg(doc) {
+      const pts = [{ label: "Start", v: doc.startBalance }, ...doc.daily.map((r) => ({ label: niceDate(dateOf(r), { month: "short", day: "numeric" }), v: Number(r.balance) }))];
+      const W = 640, H = 170, L = 8, R = 8, T = 12, B = 22;
+      const vs = pts.map((p) => p.v);
+      let lo = Math.min(...vs, doc.startBalance), hi = Math.max(...vs, doc.startBalance);
+      if (hi - lo < 200) { const mid = (hi + lo) / 2; lo = mid - 100; hi = mid + 100; }
+      const x = (i) => L + (pts.length === 1 ? (W - L - R) / 2 : (i * (W - L - R)) / (pts.length - 1));
+      const y = (v) => T + ((hi - v) * (H - T - B)) / (hi - lo);
+      const line = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+      const last = pts[pts.length - 1].v;
+      const color = last >= doc.startBalance ? "var(--green)" : "var(--red)";
+      const area = `${line} L${x(pts.length - 1).toFixed(1)},${(H - B).toFixed(1)} L${x(0).toFixed(1)},${(H - B).toFixed(1)} Z`;
+      const step = Math.max(1, Math.ceil(pts.length / 6));
+      const labels = pts.map((p, i) => (i % step === 0 || i === pts.length - 1)
+        ? `<text class="axis" x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="${i === 0 ? "start" : i === pts.length - 1 ? "end" : "middle"}">${esc(p.label)}</text>` : "").join("");
+      return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Balance after each trading day">
+        <line x1="${L}" x2="${W - R}" y1="${y(doc.startBalance).toFixed(1)}" y2="${y(doc.startBalance).toFixed(1)}" stroke="rgba(255,255,255,.12)" stroke-dasharray="3 4" />
+        <path d="${area}" fill="${color}" opacity=".08" />
+        <path d="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+        ${pts.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="2.6" fill="${color}"><title>${esc(p.label)}: ${money(p.v)}</title></circle>`).join("")}
+        ${labels}
+      </svg>`;
+    }
+
+    // Mon–Fri grid of trade dates, one row per week from the first traded week to this one.
+    function calendar(doc, sched) {
+      const byDate = new Map(doc.daily.map((r) => [dateOf(r), r]));
+      const today = sched.phase === "done" ? null : sched.days.find((d) => d.state === "live")?.date ?? null;
+      const dates = [...byDate.keys(), ...sched.days.map((d) => d.date)].sort();
+      const monday = (iso) => { const d = new Date(iso + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d; };
+      const first = monday(dates[0]);
+      const last = monday(dates[dates.length - 1]);
+      const rows = [];
+      for (const wk = new Date(first); wk <= last; wk.setUTCDate(wk.getUTCDate() + 7)) {
+        const cells = [];
+        for (let i = 0; i < 5; i++) {
+          const d = new Date(wk); d.setUTCDate(d.getUTCDate() + i);
+          const iso = d.toISOString().slice(0, 10);
+          const r = byDate.get(iso);
+          const n = r ? net(r) : null;
+          const tone = r ? (n > 0 ? "win" : n < 0 ? "loss" : "") : "none";
+          cells.push(`<div class="cell ${tone} ${iso === today ? "today" : ""}">
+            <div class="d">${esc(niceDate(iso, { month: "short", day: "numeric" }))}</div>
+            ${r ? `<div class="p ${cls(n)}">${money(n, { sign: true, dp: 0 })}</div><div class="t">${r.totalTrades} trade${r.totalTrades === 1 ? "" : "s"}</div>`
+                : `<div class="t">${iso === today ? "live" : "—"}</div>`}
+          </div>`);
+        }
+        rows.push(cells.join(""));
+      }
+      return `<div class="cal">${["Mon", "Tue", "Wed", "Thu", "Fri"].map((d) => `<div class="hd">${d}</div>`).join("")}${rows.reverse().join("")}</div>`;
+    }
+
+    function draw(doc) {
+      const sched = weekSchedule(new Date());
+      const life = lifetime(doc);
+      const wk = weekView(doc, sched);
+      const dd = wk.drawdown;
+      document.title = `${doc.displayName} · Shared Stats`;
+      $("name").textContent = doc.displayName;
+      const stale = Date.now() - Date.parse(doc.asOf) > 20 * 60 * 1000;
+      $("chips").innerHTML = [
+        `<span class="chip">${esc((doc.accountSize / 1000).toFixed(0))}K account</span>`,
+        `<span class="chip">${esc(doc.platform)}</span>`,
+        `<span class="chip ${stale ? "stale" : "live"}">updated ${esc(ago(doc.asOf))}</span>`
+      ].join("");
+
+      const tile = (k, v, s = "", tone = "") => `<div class="kpi"><div class="k">${k}</div><div class="v ${tone}">${v}</div>${s ? `<div class="s">${s}</div>` : ""}</div>`;
+      const frac = dd && dd.mll ? Math.max(0, Math.min(1, dd.cushion / dd.mll)) : 0;
+      const tone = dd?.breached ? "danger" : frac >= 0.5 ? "" : frac >= 0.2 ? "warn" : "danger";
+      const dayLabel = sched.phase === "done" ? "week complete" : sched.currentDay ? `day ${sched.currentDay} of ${sched.totalDays}` : "opens Sunday";
+
+      $("main").innerHTML = `
+        <section class="hero">
+          <div class="panel"><div class="k">Balance</div><div class="big">${money(life.balance)}</div></div>
+          <div class="panel"><div class="k">Total P&amp;L</div><div class="big ${cls(life.pnl)}">${money(life.pnl, { sign: true })}</div></div>
+        </section>
+        <section class="panel">
+          <h2>Statistics</h2>
+          <div class="kpis">
+            ${tile("Win rate", pct(life.winRate), `${life.trades} trades`)}
+            ${tile("Profit factor", life.profitFactor == null ? "—" : life.profitFactor.toFixed(2))}
+            ${tile("Avg win", money(life.avgWin), "", "pos")}
+            ${tile("Avg loss", money(life.avgLoss), "", "neg")}
+            ${tile("Best day", life.best ? money(life.best.net, { sign: true }) : "—", life.best ? esc(niceDate(life.best.date)) : "", life.best ? cls(life.best.net) : "")}
+            ${tile("Worst day", life.worst ? money(life.worst.net, { sign: true }) : "—", life.worst ? esc(niceDate(life.worst.date)) : "", life.worst ? cls(life.worst.net) : "")}
+            ${tile("Trading days", String(life.days), life.dayWinRate == null ? "" : `${pct(life.dayWinRate)} green`)}
+            ${tile("Fees", money(life.fees))}
+          </div>
+        </section>
+        <section class="panel">
+          <h2>This week · ${esc(dayLabel)}</h2>
+          <div class="week">
+            <span class="ret ${cls(wk.overall.return_pct)}">${pct(wk.overall.return_pct, { sign: true })}</span>
+            <span class="${cls(wk.overall.pnl)}" style="font-weight:700">${money(wk.overall.pnl, { sign: true })} · ${wk.overall.trades} trades</span>
+          </div>
+          ${dd ? `<div class="dd ${tone}">
+            <div class="dd-bar"><span style="width:${(frac * 100).toFixed(1)}%"></span></div>
+            <div class="dd-label"><span>${dd.breached ? "Max loss limit breached" : `${money(dd.cushion, { dp: 0 })} to max loss limit`}</span><span>Limit ${money(MLL_BY_SIZE[doc.accountSize], { dp: 0 })} · floor ${money(dd.threshold, { dp: 0 })}</span></div>
+          </div>` : ""}
+        </section>
+        <section class="panel curve"><h2>Balance</h2>${curveSvg(doc)}</section>
+        <section class="panel"><h2>Daily P&amp;L</h2>${calendar(doc, sched)}</section>`;
+
+      const since = niceDate(doc.startTradeDay, { month: "short", day: "numeric", year: "numeric" });
+      $("note").innerHTML = `Bot account on ${esc(doc.platform)}, shown as a ${esc((doc.accountSize / 1000).toFixed(0))}K account from ${esc(since)}. ` +
+        `P&amp;L is net of TopstepX fees. The trade log isn't shared.`;
+    }
+
+    async function refresh() {
+      if (!FEED) {
+        $("main").innerHTML = `<div class="empty">This page shows a shared stats feed — open it with <code>?feed=&lt;name&gt;</code>.</div>`;
+        return;
+      }
+      try {
+        draw(await fetchFeed(FEED));
+      } catch (e) {
+        if (!$("main").querySelector(".hero")) $("main").innerHTML = `<div class="empty">Couldn't load the <b>${esc(FEED)}</b> feed (${esc(e.message)}).</div>`;
+      }
+    }
+    refresh();
+    setInterval(refresh, 60_000);
+  </script>
+</body>
+</html>

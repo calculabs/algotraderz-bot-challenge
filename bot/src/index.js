@@ -2,9 +2,10 @@
 // challenge. Discord is the identity, so there's no login, no anonymous auth, and
 // no per-browser token to lose: each competitor is keyed by their Discord user id.
 //
-// This one Worker serves two things:
-//   POST /         Discord interactions endpoint (the slash commands)
-//   GET  /roster   public JSON the leaderboard site reads (CORS: *)
+// This one Worker serves three things:
+//   POST /           Discord interactions endpoint (the slash commands)
+//   GET  /roster     public JSON the leaderboard site reads (CORS: *)
+//   GET|POST /feed/<id>  stats feeds for accounts TopstepX can't share (see "performance feeds")
 //
 // The roster lives in a KV namespace (binding ROSTER), one key per competitor:
 //   user:<discordId> -> { discordId, name, url, accountId, joinedAt, updatedAt }
@@ -138,6 +139,85 @@ async function readRoster(env, sched) {
 
 // ---- Discord request-signature verification (Ed25519 via Web Crypto) ----
 const hexToBytes = (hex) => Uint8Array.from(hex.match(/.{1,2}/g).map((b) => parseInt(b, 16)));
+
+// ---- performance feeds ----
+//
+// A feed is a stats document shaped like TopstepX's public share API (`daily` and `todaystats`
+// rows, `intradayLows`), for an account TopstepX can't share — today zandobot's Rithmic paper
+// account. Its producer POSTs the whole document, signed with the feed's secret; the board and
+// share.html GET it. One KV key per feed, written only when the producer's numbers change.
+//
+//   POST /feed/<id>   headers x-feed-timestamp (epoch ms) and x-feed-signature
+//                     (hex HMAC-SHA256 of "<timestamp>.<body>" under FEED_KEYS[id])
+//   GET  /feed/<id>   public JSON (CORS: *), edge-cached for 30 s
+//
+// FEED_KEYS is a Worker secret holding {"<id>": "<secret>"}; a feed id without one doesn't exist.
+const feedKey = (id) => `feed:${id}`;
+const FEED_PATH = /^\/feed\/([a-z0-9-]{1,40})$/;
+const FEED_SKEW_MS = 5 * 60 * 1000;
+const FEED_MAX_BYTES = 256 * 1024;
+
+function feedSecret(env, id) {
+  let keys;
+  try {
+    keys = JSON.parse(env.FEED_KEYS || "{}");
+  } catch {
+    return null;
+  }
+  const secret = keys?.[id];
+  return typeof secret === "string" && secret.length >= 32 ? secret : null;
+}
+
+async function verifyFeedSignature(secret, message, signatureHex) {
+  if (!/^[0-9a-f]{64}$/.test(signatureHex)) return false;
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
+  return crypto.subtle.verify("HMAC", key, hexToBytes(signatureHex), new TextEncoder().encode(message));
+}
+
+const feedReply = (status, body) => new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
+
+async function ingestFeed(request, env, ctx, id) {
+  const secret = feedSecret(env, id);
+  if (!secret) return feedReply(404, { error: `no feed named ${id}` });
+  const ts = Number(request.headers.get("x-feed-timestamp"));
+  if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > FEED_SKEW_MS) {
+    return feedReply(401, { error: "x-feed-timestamp is missing or more than 5 minutes off" });
+  }
+  const body = await request.text();
+  if (body.length > FEED_MAX_BYTES) return feedReply(413, { error: `feed documents are limited to ${FEED_MAX_BYTES} bytes` });
+  if (!(await verifyFeedSignature(secret, `${ts}.${body}`, request.headers.get("x-feed-signature") || ""))) {
+    return feedReply(401, { error: "x-feed-signature does not match" });
+  }
+  let doc;
+  try {
+    doc = JSON.parse(body);
+  } catch {
+    return feedReply(400, { error: "body is not JSON" });
+  }
+  if (doc?.feed !== id || !Array.isArray(doc.daily) || !Number.isFinite(doc.asOfMs)) {
+    return feedReply(400, { error: "document needs feed (matching the path), daily[] and asOfMs" });
+  }
+  // The timestamp window stops a replay after 5 minutes; this stops one inside it from
+  // putting an older document back over a newer one.
+  const prev = await env.ROSTER.get(feedKey(id), "json");
+  if (prev && Number(prev.asOfMs) > doc.asOfMs) return feedReply(409, { error: "a newer document is already stored" });
+  await env.ROSTER.put(feedKey(id), body);
+  ctx.waitUntil(caches.default.delete(new Request(new URL(`/feed/${id}`, request.url))));
+  return feedReply(200, { ok: true, asOfMs: doc.asOfMs });
+}
+
+async function serveFeed(request, env, ctx, id) {
+  const cache = caches.default;
+  const hit = await cache.match(request);
+  if (hit) return hit;
+  const body = await env.ROSTER.get(feedKey(id));
+  if (body == null) {
+    return new Response(JSON.stringify({ error: `no feed named ${id}` }), { status: 404, headers: { ...JSON_HEADERS, ...CORS } });
+  }
+  const res = new Response(body, { headers: { ...JSON_HEADERS, ...CORS, "cache-control": "public, max-age=30, s-maxage=30" } });
+  ctx.waitUntil(cache.put(request, res.clone()));
+  return res;
+}
 
 async function verifySignature(request, rawBody, publicKeyHex) {
   const signature = request.headers.get("x-signature-ed25519");
@@ -624,6 +704,10 @@ export default {
       ctx.waitUntil(cache.put(request, res.clone()));
       return res;
     }
+
+    const feed = url.pathname.match(FEED_PATH);
+    if (feed && request.method === "GET") return serveFeed(request, env, ctx, feed[1]);
+    if (feed && request.method === "POST") return ingestFeed(request, env, ctx, feed[1]);
 
     // Anything else that isn't a Discord interaction POST is just a health check.
     if (request.method !== "POST") return new Response("ok", { headers: { "content-type": "text/plain" } });

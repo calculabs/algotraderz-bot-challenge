@@ -61,3 +61,7 @@ enabled = true
 #   npx wrangler secret put DISCORD_BOT_TOKEN
 # Needed only for the announcement POST (and by register.js, run locally). Interaction
 # replies verify with DISCORD_PUBLIC_KEY above and never touch the token.
+#
+# Stats feeds (GET/POST /feed/<id>, see src/index.js) need FEED_KEYS, a JSON map of feed id to its
+# signing secret, e.g. {"zandobot":"<64 hex chars>"}; the producer holds the same secret:
+#   npx wrangler secret put FEED_KEYS

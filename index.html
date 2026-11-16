@@ -330,7 +330,7 @@
   </div>
 
   <script type="module">
-    import { fetchWeeklyStats, parseAccountId } from "./src/topstep-api.mjs";
+    import { fetchShareStats, shareOf, shareAccountId, shareLabel } from "./src/share.mjs";
     import { resolveWeek } from "./src/calendar.mjs";
     import { computeMetrics, buildRow, rankByScope, challengeInfo } from "./src/leaderboard.mjs";
     import { fetchBotRoster, mergeRoster, eligibleForWeek, DISCORD_INVITE } from "./src/roster.mjs";
@@ -713,10 +713,11 @@
       // lists everyone, so a weekend joiner sees themselves on the roster while sitting out
       // the week that already ended.
       const rows = (await Promise.all(eligibleForWeek(config.participants || [], schedule).map(async (p) => {
-        const accountId = parseAccountId(p.accountId ?? p.share ?? p.url);
-        if (accountId == null) return null;
+        const share = shareOf(p);
+        if (share == null) return null;
+        const accountId = shareAccountId(share);
         try {
-          const metrics = computeMetrics(await fetchWeeklyStats(accountId, range), schedule.days, { currentDay: schedule.currentDay });
+          const metrics = computeMetrics(await fetchShareStats(share, range, { lean: true }), schedule.days, { currentDay: schedule.currentDay });
           return buildRow(p, accountId, metrics, { source: "live" });
         } catch {
           return buildRow(p, accountId, {}, { source: "error" });
@@ -758,10 +759,10 @@
     function renderPanel() {
       const ps = CONFIG.participants || [];
       const rosterHtml = ps.length ? ps.map((p) => {
-        const acc = parseAccountId(p.accountId ?? p.share ?? p.url);
+        const share = shareOf(p);
         return `<div class="rrow">
           <span class="rn">${esc(p.name || p.discord || "—")}</span>
-          <span class="rm">${acc != null ? "account " + acc : "no link"}</span>
+          <span class="rm">${share != null ? esc(shareLabel(share)) : "no link"}</span>
         </div>`;
       }).join("") : `<div class="hint">No one's joined yet — be first with <code>/join</code>.</div>`;
 

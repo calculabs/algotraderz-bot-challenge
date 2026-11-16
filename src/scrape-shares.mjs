@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { fetchAccountStats, parseAccountId } from "./topstep-api.mjs";
+import { fetchShareStats, shareOf, shareAccountId } from "./share.mjs";
 import { resolveWeek } from "./calendar.mjs";
 import { computeMetrics, buildRow, rankByScope, challengeInfo, toCsv } from "./leaderboard.mjs";
 import { fetchBotRoster, mergeRoster, eligibleForWeek } from "./roster.mjs";
@@ -35,19 +35,20 @@ const diagnostics = [];
 
 for (const p of participants) {
   const name = p.name ?? p.discord ?? "Unknown";
-  const accountId = parseAccountId(p.accountId ?? p.share ?? p.url);
-  if (accountId == null) {
+  const share = shareOf(p);
+  if (share == null) {
     console.warn(`Skipping ${name}: no valid share link / account id`);
     continue;
   }
+  const accountId = shareAccountId(share);
 
-  console.log(`Fetching ${name} (account ${accountId})...`);
+  console.log(`Fetching ${name} (${share.kind} ${share.id})...`);
   let metrics = {};
   let source = "live";
   let shared = null;
   let error = null;
   try {
-    const stats = await fetchAccountStats(accountId, range);
+    const stats = await fetchShareStats(share, range);
     shared = stats.shared;
     metrics = computeMetrics(stats, schedule.days, { currentDay: schedule.currentDay });
     const safe = String(name).replace(/[^a-z0-9_-]+/gi, "_");

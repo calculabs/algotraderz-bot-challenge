@@ -32,7 +32,7 @@ jobs:
       - name: Assemble static site
         run: |
           mkdir -p _site/data
-          cp index.html participants.json _site/
+          cp index.html share.html participants.json _site/
           cp -r src _site/src
           cp data/leaderboard.json data/leaderboard.csv _site/data/
       - uses: actions/upload-pages-artifact@v3
