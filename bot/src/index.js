@@ -8,15 +8,14 @@
 //   GET|POST /feed/<id>  stats feeds for accounts TopstepX can't share (see "performance feeds")
 //   GET  /health/discord  whether the champion post's bot token and channel still work
 //
-// The roster lives in a KV namespace (binding ROSTER), one key per competitor:
-//   user:<discordId> -> { discordId, name, url, accountId, joinedAt, updatedAt }
+// The roster lives in a KV namespace (binding ROSTER), one key per competitor (see "entries"):
+//   user:<discordId> -> { discordId, name, accounts: [...], updatedAt }
 //
-// The roster is per-week. The line between weeks is the Sunday 1pm PT rollover (see
-// calendar.mjs): from that instant every entry written before it is last week's and is
-// treated as gone by every read and command here, and a cron sweeps the dead keys and posts
-// the "new week" notice. The sweep is housekeeping — the board is clear at the rollover
-// whether or not it has run yet — so a week always starts from an empty board and nobody
-// inherits a link they can no longer change.
+// Entries carry over from week to week. At the Sunday 1pm PT rollover (see calendar.mjs) an
+// account that didn't trade in the week just finished drops off: every read here applies that
+// from the rollover instant, and a cron then prunes the keys and posts the "new week" notice.
+// A carried account that hasn't traded yet this week can still be swapped or dropped, so
+// nobody is stuck all week on an account they reset over the weekend.
 //
 // The Worker needs no bot token (it only verifies request signatures with the app's
 // public key and replies inline). The token is used solely by register.js, run once
@@ -24,7 +23,8 @@
 
 import { weekSchedule } from "../../src/calendar.mjs";
 import { MAX_ACCOUNTS_PER_PERSON } from "../../src/roster.mjs";
-import { podiumOf } from "../../src/leaderboard.mjs";
+import { computeMetrics, podiumOf } from "../../src/leaderboard.mjs";
+import { fetchWeekActivity } from "../../src/topstep-api.mjs";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const CORS = { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type" };
@@ -92,28 +92,36 @@ const ROSTER_ALL = "roster:all";
 
 // ---- the week boundary ----
 //
-// Entries are good for one week, and the boundary is the Sunday 1pm PT rollover — the same
-// instant the board flips to the new week. Anything written before it belongs to a finished
-// week and is GONE from that moment: /roster hides it, /join and /link overwrite it as if it
-// weren't there, /leave and /mylink don't see it. The cron then deletes the keys and posts the
-// notice, but nothing waits on it.
+// The weeks meet at the Sunday 1pm PT rollover, the instant the board flips to the new week.
+// Entries carry across it, but an account that didn't trade in the week just finished does
+// not: from that instant /roster hides it and the commands treat it as gone. The cron then
+// prunes the keys and posts the notice, but nothing waits on it.
 //
-// This is deliberate. The reset used to be the cron's job alone: one wipe, in a two-hour
-// window, gating everything. On 2026-08-16 that wipe didn't land — the roster carried into
-// the live week, the swap lock froze it there, and a trader who'd reset their account over
-// the weekend was stuck on a dead entry with no command that could free them (/leave tombstoned
-// it, so leaving didn't help either). Correctness can't hang on one cron fire landing cleanly
-// inside a window: the clock decides what's stale, and the sweep can run late, run twice, or
-// fail and retry without the board ever being wrong.
+// The board used to clear every Sunday, and before that the reset was one cron wipe in a
+// two-hour window. On 2026-08-16 that wipe didn't land: the roster carried into the live week,
+// the swap lock froze it there, and a trader who'd reset their account over the weekend was
+// stuck on a dead entry with no command that could free them. Two things keep that from coming
+// back with carry-over: correctness never hangs on one cron fire (the clock and the recorded
+// activity decide, at every read), and an account with no trades yet this week can be swapped
+// or dropped any time, because it has no result to protect.
 const stamp = (iso) => {
   const t = new Date(iso).getTime();
   return Number.isFinite(t) ? t : 0; // missing/garbage timestamps sort as ancient
 };
 const rolloverMs = (sched) => stamp(sched.rollover);
-// A competitor entry from a finished week. Keyed on updatedAt, not joinedAt: joinedAt is
-// preserved across re-submits (it says when someone FIRST entered), so only updatedAt says
-// whether this entry was written for the current week.
-const staleEntry = (e, sched) => stamp(e?.updatedAt ?? e?.joinedAt) < rolloverMs(sched);
+const DAY_MS = 24 * 60 * 60 * 1000;
+// Which accounts traded in a finished week, recorded from its final standings (see
+// recordWeekActivity), keyed by that week's start date.
+const activeKey = (weekStartIso) => `active:${String(weekStartIso).slice(0, 10)}`;
+// The week just finished's traded account ids, or null when they weren't recorded (then
+// nothing is pruned). The date-only key absorbs the hour a DST change moves the open.
+const readActive = (env, sched) => env.ROSTER.get(activeKey(new Date(stamp(sched.weekStart) - 7 * DAY_MS).toISOString()), "json");
+// The accounts an entry still holds this week: those that traded in the week just finished,
+// and any entered since this week's rollover.
+function liveAccounts(entry, sched, active) {
+  if (!Array.isArray(active)) return entry.accounts;
+  return entry.accounts.filter((a) => active.includes(a.accountId) || stamp(a.joinedAt) >= rolloverMs(sched));
+}
 // A /leave tombstone from a finished week: it could only ever gate a rejoin during the week
 // it was written in.
 const staleTomb = (t, sched) => stamp(t?.leftAt) < rolloverMs(sched);
@@ -135,12 +143,12 @@ async function rebuildRoster(env) {
 async function readRoster(env, sched) {
   const cached = await env.ROSTER.get(ROSTER_ALL, "json");
   const all = Array.isArray(cached) ? cached : await rebuildRoster(env); // cold start / first deploy
-  // The cache can still hold last week's entries — the sweep hasn't reached them, or a
-  // rebuild raced it. Filtered here, so the board is clear at the rollover no matter what KV
-  // holds, and a stuck cron can never carry a roster into the next week again.
+  // The cache can still hold accounts that dropped off at the rollover — the cron hasn't pruned
+  // them yet, or a rebuild raced it. Filtered here, so the board is right from the rollover
+  // on, whatever KV holds.
+  const active = await readActive(env, sched);
   return all
-    .filter((e) => !staleEntry(e, sched))
-    .flatMap((e) => e.accounts.map((a) => ({
+    .flatMap((e) => liveAccounts(e, sched, active).map((a) => ({
       name: accountName(e.name, a.slot), url: a.url, accountId: a.accountId, joinedAt: a.joinedAt, owner: e.discordId
     })));
 }
@@ -253,40 +261,40 @@ const truthy = (v) => /^(1|true|on|yes)$/i.test(String(v ?? "").trim());
 //
 //   "done"   Fri close → Sun 1pm PT   FROZEN. The week is finished; nothing on the board
 //                                     may change until it rolls over.
-//   "pre"    Sun 1pm → 3pm PT         OPEN. The board just rolled over to an empty week —
-//                                     join, and swap accounts as often as you like.
-//   live     Sun 3pm → Fri close      Joins open (unless LOCK_JOIN), swaps locked.
+//   "pre"    Sun 1pm → 3pm PT         OPEN. The board just rolled over: entries carried
+//                                     over, idle accounts dropped off. Join, add, swap and
+//                                     drop accounts as often as you like.
+//   live     Sun 3pm → Fri close      First joins open (unless LOCK_JOIN); accounts that
+//                                     have traded are set, untraded ones can still change.
 //
-// The frozen weekend is what makes the rollover honest. An entry written after Friday's
-// close would be last week's the moment Sunday rolls over — gone before it could ever score
-// — so accepting one would be a lie: the bot would say "you're on the board" and the board
-// would disagree by Sunday afternoon. Freezing also pins the finished week: the champion
-// announced on Friday still matches the standings on Sunday, because no join, swap or leave
-// can move them in between.
+// Freezing pins the finished week: the champion announced on Friday still matches the
+// standings on Sunday, because no join, swap or leave can move them in between.
 //
 // Every command reads the phase once from weekSchedule(); the same schedule also carries the
-// rollover instant that decides which entries are stale (see "the week boundary").
+// rollover instant that decides which accounts dropped off (see "the week boundary").
 
 // What every refusal during the freeze tells you to do. The rollover is ~2h before the open.
 const COMES_BACK_SUNDAY =
-  "The board **clears every Sunday**, about 2h before the open, and joining opens the moment it does — `/join` then with the account you want scored for the week.";
+  "The board **rolls over every Sunday**, about 2h before the open: entries carry over (accounts that didn't trade that week drop off), and joining and account changes open the moment it does.";
 
 // ---- entries: up to MAX_ACCOUNTS_PER_PERSON accounts per person ----
 //
 //   user:<id> -> { discordId, name, accounts: [{ accountId, url, slot, joinedAt }], updatedAt }
 //   left:<id> -> { discordId, accounts, updatedAt, leftAt }   (the /leave tombstone)
 //
-// Each account is its own row on the board, named by its slot: "alice", "alice #2". Slots are
-// assigned once, so a name never moves to a different account.
+// Each account is its own row on the board, named by its slot: "alice", "alice #2". A slot
+// keeps its account for as long as the account stays on the board.
 //
 // What can change when, all to stop picking accounts after their P&L is known (TopstepX scores
 // every account from the Sunday open, whenever it was entered):
 //
 //   pre (Sun rollover -> open)   join, add accounts, swap, drop single accounts — anything.
 //   live (open -> Fri close)     a person's FIRST account can still join late (unless
-//                                LOCK_JOIN). Adding another, swapping, or dropping one of
-//                                several is locked: you can only drop out entirely, and a
-//                                rejoin brings back every account you left with.
+//                                LOCK_JOIN). Adding another is locked. An account that has
+//                                traded this week is set; one with no trades yet can be
+//                                swapped or dropped, the same exposure as a late first join.
+//                                Dropping out entirely is always allowed, and a rejoin
+//                                brings back every account you left with.
 //   done (Fri close -> rollover) frozen — see "the week, in three states" above.
 const accountName = (name, slot) => (slot === 1 ? name : `${name} #${slot}`);
 const freeSlot = (accounts) => {
@@ -299,19 +307,33 @@ const accountLines = (name, accounts) =>
 
 const NOT_A_LINK =
   "❌ That doesn't look like a TopstepX share link. Copy it from your stats page — e.g. `https://topstepx.com/share/stats?share=24801853`.";
-const FROZEN = `🧊 The week is finished and the board is frozen until it clears. ${COMES_BACK_SUNDAY}`;
+const FROZEN = `🧊 The week is finished and the board is frozen until it rolls over. ${COMES_BACK_SUNDAY}`;
 const SET_FOR_THE_WEEK =
-  "Once the week is live your accounts are set until Friday's close: adding, swapping and dropping single accounts reopen at Sunday's clear, ~2h before the open.";
+  "Once the week is live, adding accounts waits for Sunday's rollover (~2h before the open), and an account that has traded is set until Friday's close. One with no trades yet can still be swapped (`/link`) or dropped (`/leave` with its link).";
+const COULD_NOT_CHECK = (id) => `⚠️ I couldn't check TopstepX for account **${id}** just now, so I can't tell whether it has traded this week. Try again in a minute.`;
 
-// This week's state for one person: their entry, and a tombstone that can gate a rejoin. Only
-// a tombstone written after this week opened counts — leaving before the open (or in a week you
-// sat out) pins nobody, the same staleEntry() test as for entries.
+// Whether an account already has a result this week, read from TopstepX the way the board reads
+// it. null when TopstepX didn't answer: "couldn't read" must never pass for "no trades".
+async function tradedThisWeek(accountId, sched) {
+  try {
+    const stats = await fetchWeekActivity(accountId, { start: sched.weekStart, end: sched.weekEnd });
+    return computeMetrics(stats, sched.days, { currentDay: sched.currentDay }).days_traded > 0;
+  } catch {
+    return null;
+  }
+}
+
+// This week's state for one person: their entry with only the accounts still on the board
+// (null when none are), the stored record (`found`), and a tombstone that can gate a rejoin.
+// Only a tombstone written after this week opened counts — leaving before the open, or in an
+// earlier week, pins nobody.
 async function personState(env, u, sched) {
   const found = await env.ROSTER.get(rosterKey(u.id), "json");
-  const entry = found && !staleEntry(found, sched) ? found : null;
+  const accounts = found ? liveAccounts(found, sched, await readActive(env, sched)) : [];
+  const entry = accounts.length ? { ...found, accounts } : null;
   const left = entry ? null : await env.ROSTER.get(leftKey(u.id), "json");
-  const tomb = left && stamp(left.leftAt) >= stamp(sched.weekStart) && !staleEntry(left, sched) ? left : null;
-  return { entry, left, tomb };
+  const tomb = left && stamp(left.leftAt) >= stamp(sched.weekStart) ? left : null;
+  return { entry, found, left, tomb };
 }
 
 async function saveAccounts(env, u, state, accounts) {
@@ -366,7 +388,7 @@ async function joinAccount(interaction, env) {
   return reply(`✅ You're on the board as **${name}** (account **${accountId}**).${more}${await sharingNote(accountId)}`);
 }
 
-// /link swaps your one account for another. With several, say which goes: /leave <link> + /join.
+// /link swaps one of your accounts for another: your only one, or the one named by `replace`.
 async function swapAccount(interaction, env) {
   const u = userOf(interaction);
   const accountId = parseAccountId(optionValue(interaction, "link"));
@@ -377,12 +399,26 @@ async function swapAccount(interaction, env) {
   if (!state.entry) return joinAccount(interaction, env);
   const accounts = state.entry.accounts;
   if (accounts.some((a) => a.accountId === accountId)) return reply(`✅ Account **${accountId}** is already on the board.`);
-  if (sched.phase !== "pre") return reply(`🔒 You can't swap accounts mid-week. ${SET_FOR_THE_WEEK}`);
-  if (accounts.length > 1) {
-    return reply(`You have ${accounts.length} accounts on the board — drop the old one with \`/leave\` and its link, then \`/join\` the new one.\n${accountLines(displayName(u), accounts)}`);
+  const replaceOption = optionValue(interaction, "replace");
+  let old;
+  if (replaceOption != null) {
+    const oldId = parseAccountId(replaceOption);
+    if (oldId == null) return reply(NOT_A_LINK);
+    old = accounts.find((a) => a.accountId === oldId);
+    if (!old) return reply(`Account **${oldId}** isn't one of yours on the board.`);
+  } else if (accounts.length === 1) {
+    old = accounts[0];
+  } else {
+    return reply(`You have ${accounts.length} accounts on the board — say which one this replaces: \`/link\` with \`replace\` set to its link.\n${accountLines(displayName(u), accounts)}`);
   }
-  await saveAccounts(env, u, state, [{ accountId, url: shareUrl(accountId), slot: 1, joinedAt: new Date().toISOString() }]);
-  return reply(`🔁 Updated — you're now tracked on account **${accountId}**.${await sharingNote(accountId)}`);
+  if (sched.phase !== "pre") {
+    const traded = await tradedThisWeek(old.accountId, sched);
+    if (traded === null) return reply(COULD_NOT_CHECK(old.accountId));
+    if (traded) return reply(`🔒 Account **${old.accountId}** has already traded this week, so it's set until Friday's close. ${SET_FOR_THE_WEEK}`);
+  }
+  const next = accounts.map((a) => (a === old ? { accountId, url: shareUrl(accountId), slot: old.slot, joinedAt: new Date().toISOString() } : a));
+  await saveAccounts(env, u, state, next);
+  return reply(`🔁 Swapped — **${accountName(displayName(u), old.slot)}** is now account **${accountId}** (was **${old.accountId}**).${await sharingNote(accountId)}`);
 }
 
 const COMMANDS = {
@@ -392,63 +428,64 @@ const COMMANDS = {
   async mylink(interaction, env) {
     const u = userOf(interaction);
     const sched = weekSchedule(new Date());
-    const found = await env.ROSTER.get(rosterKey(u.id), "json");
-    const entry = found && !staleEntry(found, sched) ? found : null; // last week's = not on the board
-    // During the freeze, "change it with /link" would be a promise the next command breaks.
-    const frozen = sched.phase === "done";
-    const next = frozen
-      ? `This was **last week's** entry — it clears on Sunday. ${COMES_BACK_SUNDAY}`
-      : sched.phase === "pre"
-        ? `Add accounts with \`/join\` (up to ${MAX_ACCOUNTS_PER_PERSON}), swap with \`/link\`, or \`/leave\` to drop out.`
-        : `${SET_FOR_THE_WEEK} \`/leave\` drops you out entirely.`;
-    return entry
-      ? reply(`🔎 You're on the board with:\n${accountLines(entry.name, entry.accounts)}\n${next}`)
-      : reply(frozen
+    const state = await personState(env, u, sched);
+    if (!state.entry) {
+      if (state.found) return reply(`Your accounts didn't trade last week, so they dropped off at Sunday's rollover. \`/join\` to come back.`);
+      return reply(sched.phase === "done"
         ? `You're not on the board. ${COMES_BACK_SUNDAY}`
         : "You're not on the board yet. Add yourself with `/join <your TopstepX share link>`.");
+    }
+    const next = sched.phase === "done"
+      ? `Your entry carries into next week; an account that didn't trade this week drops off at Sunday's rollover. ${COMES_BACK_SUNDAY}`
+      : sched.phase === "pre"
+        ? `Add accounts with \`/join\` (up to ${MAX_ACCOUNTS_PER_PERSON}), swap with \`/link\`, or \`/leave\` to drop out.`
+        : `${SET_FOR_THE_WEEK} \`/leave\` without a link drops you out entirely.`;
+    return reply(`🔎 You're on the board with:\n${accountLines(state.entry.name, state.entry.accounts)}\n${next}`);
   },
 
   async leave(interaction, env) {
     const u = userOf(interaction);
     const linkOption = optionValue(interaction, "link");
-    const existing = await env.ROSTER.get(rosterKey(u.id), "json");
-    if (!existing) return reply("You weren't on the board.");
     const sched = weekSchedule(new Date());
-    // Last week's entry, still in KV only because the sweep hasn't reached it. It was never an
-    // entry into THIS week, so no tombstone: one here would pin them to accounts they never
-    // entered this week on (the 2026-08-17 trap).
-    if (staleEntry(existing, sched)) {
+    const state = await personState(env, u, sched);
+    if (!state.entry) {
+      if (!state.found) return reply("You weren't on the board.");
+      // Every account dropped off at the rollover; the cron just hasn't pruned the key yet.
       await env.ROSTER.delete(rosterKey(u.id));
       await rebuildRoster(env);
-      return reply("That was **last week's** entry — entries don't carry over, so you were already off the board. `/join` to enter this week.");
+      return reply("Your accounts didn't trade last week, so they'd already dropped off at Sunday's rollover — you weren't on the board. `/join` to enter.");
     }
-    // Frozen too: the week is already scored, and Sunday's rollover drops you anyway.
+    // Frozen: the week is already scored and its champion announced off these standings.
     if (sched.phase === "done") {
-      return reply(`🧊 The week is finished, so there's nothing left to drop out of — and the board is frozen until it clears on Sunday. **You're out by default**: entries don't carry over, so just don't \`/join\` next week.`);
+      return reply(`🧊 The week is finished and the board is frozen until Sunday's rollover. If you don't want to carry into next week, \`/leave\` then — before the open.`);
     }
+    const accounts = state.entry.accounts;
     if (linkOption != null) {
       const accountId = parseAccountId(linkOption);
       if (accountId == null) return reply(NOT_A_LINK);
-      if (!existing.accounts.some((a) => a.accountId === accountId)) return reply(`Account **${accountId}** isn't one of yours on the board.`);
-      if (existing.accounts.length > 1) {
-        // Dropping one of several after seeing the week's P&L is picking winners.
-        if (sched.phase !== "pre") return reply(`🔒 You can't drop a single account mid-week. ${SET_FOR_THE_WEEK} \`/leave\` without a link drops you out entirely.`);
-        const rest = existing.accounts.filter((a) => a.accountId !== accountId);
+      if (!accounts.some((a) => a.accountId === accountId)) return reply(`Account **${accountId}** isn't one of yours on the board.`);
+      if (accounts.length > 1) {
+        // Dropping one of several after it has a result this week is picking winners.
+        if (sched.phase !== "pre") {
+          const traded = await tradedThisWeek(accountId, sched);
+          if (traded === null) return reply(COULD_NOT_CHECK(accountId));
+          if (traded) return reply(`🔒 Account **${accountId}** has already traded this week, so it stays until Friday's close. \`/leave\` without a link drops you out entirely.`);
+        }
+        const rest = accounts.filter((a) => a.accountId !== accountId);
         await saveAccounts(env, u, { left: null }, rest);
-        return reply(`👋 Dropped account **${accountId}**. Still on the board:\n${accountLines(existing.name, rest)}`);
+        return reply(`👋 Dropped account **${accountId}**. Still on the board:\n${accountLines(state.entry.name, rest)}`);
       }
     }
     await env.ROSTER.delete(rosterKey(u.id));
     // Remember the accounts they left with (see leftKey) so a rejoin can't swap or drop any.
-    // The entry's own updatedAt rides along so staleEntry() can judge the tombstone.
     await env.ROSTER.put(leftKey(u.id), JSON.stringify({
-      discordId: u.id, accounts: existing.accounts, updatedAt: existing.updatedAt, leftAt: new Date().toISOString()
+      discordId: u.id, accounts, updatedAt: state.entry.updatedAt, leftAt: new Date().toISOString()
     }));
     await rebuildRoster(env);
-    const n = existing.accounts.length;
+    const n = accounts.length;
     return reply(sched.phase === "pre"
       ? `👋 Removed you from the board. \`/join\` again any time.`
-      : `👋 Removed you from the board. You can rejoin any time this week with \`/join\` — ${n === 1 ? `on the same account (**${existing.accounts[0].accountId}**)` : `it brings back all ${n} accounts you left with`}.`);
+      : `👋 Removed you from the board. You can rejoin any time this week with \`/join\` — ${n === 1 ? `on the same account (**${accounts[0].accountId}**)` : `it brings back all ${n} accounts you left with`}.`);
   },
 
   leaderboard(interaction, env) {
@@ -530,7 +567,7 @@ export function championEmbed(podium, env) {
     description:
       `**${pct(w.overall.return_pct)}** return · **${money(w.overall.pnl)}** weekly P&L` +
       (runners ? `\n\n${runners}` : "") +
-      `\n\n[Full board](${siteBase(env)})\nThe board is frozen until it clears Sunday, ~2h before the open — \`/join\` then to enter the new week.`,
+      `\n\n[Full board](${siteBase(env)})\nEntries carry into next week; accounts that didn't trade this week drop off at Sunday's rollover, ~2h before the open — \`/join\` then to add or change accounts.`,
     color: 0xf4c04f
   };
 }
@@ -648,28 +685,40 @@ async function announceChampion(env, sched) {
   console.log(`announce: ${ok ? "posted" : "did not post"} champion for week ${marker.slice(10)} (${podium[0].name})`);
 }
 
-// ---- Sunday rollover: sweep + notice ----
+// After Friday's close, record which accounts traded this week, from the first standings the
+// site publishes after the close (its scrape runs every 15 minutes). Sunday's rollover drops
+// the rest. A scrape with any unread account is skipped rather than taken as "no trades" — a
+// TopstepX outage must not prune the field; if no clean post-close scrape lands all weekend,
+// nothing is recorded and nothing is pruned.
+async function recordWeekActivity(env, sched) {
+  if (sched.phase !== "done") return;
+  const key = activeKey(sched.weekStart);
+  if ((await env.ROSTER.get(key)) != null) return;
+  const standings = await fetchStandings(env);
+  if (!standings || standings.week?.start !== sched.weekStart || stamp(standings.generated_at) < stamp(sched.close)) return;
+  const rows = standings.rows || [];
+  if (rows.some((r) => r.source === "error")) return;
+  const traded = rows.filter((r) => r.account_id != null && (r.days_traded ?? 0) > 0).map((r) => r.account_id);
+  await env.ROSTER.put(key, JSON.stringify(traded));
+  console.log(`activity: ${traded.length} account(s) traded in week ${key.slice(7)}`);
+}
+
+// ---- Sunday rollover: prune + notice ----
 //
-// Entries are good for one week. At the Sunday 1pm PT rollover every entry written before it
-// is last week's and is already inert (see "the week boundary" above): the cron's job here is
-// to delete the dead keys and post the "new week — the board is clear" notice. Neither gates
-// anything, so unlike the original reset this doesn't need to land in the two-hour pre-open
-// window: it runs on the first fire after the rollover that gets through, whenever that is,
-// and until then the board is clear anyway.
+// At the Sunday 1pm PT rollover every account that didn't trade in the week just finished is
+// already off the board (see "the week boundary"): the cron's job here is to prune those keys
+// and the finished week's tombstones, then post the "new week" notice. Neither gates anything,
+// so this doesn't need to land in the two-hour pre-open window: it runs on the first fire
+// after the rollover that gets through, whenever that is.
 //
-// The sweep is idempotent and stale-only — it never touches an entry written for the current
-// week — so it is safe to run late, to run twice, and to fail halfway and be retried. That is
-// the property the original lacked: it CLAIMED the week (wrote its marker) before wiping so a
-// second pass couldn't delete fresh joiners, which meant a fire that died between the claim
-// and the wipe silently forfeited the week — the roster carried over and every later fire
-// saw "already cleared". Here the marker is written only after the sweep completes, and it
-// records what was cleared, not a claim.
+// The prune is idempotent — it only ever removes what liveAccounts() already hides — so it is
+// safe to run late, to run twice, and to fail halfway and be retried. The marker is written
+// only after it completes, and records what was pruned, not a claim.
 //
 // Budget: the free plan allows 50 subrequests per invocation and KV calls count. Each key
-// costs a GET (to read its timestamp) and, if stale, a DELETE, so a fire sweeps at most
-// SWEEP_KEYS keys and leaves the rest for the next fire ten minutes later. Worst case for a
-// fire is 2·SWEEP_KEYS + 7 (two LISTs, the markers, the Discord post) = 39. Rosters this
-// size finish in one fire; a runaway one still converges.
+// costs a GET and at most one PUT or DELETE, so a fire handles at most SWEEP_KEYS keys and
+// leaves the rest for the next fire ten minutes later. Worst case for a fire is
+// 2·SWEEP_KEYS + 8 (two LISTs, the activity read, the markers, the Discord post) = 40.
 export const clearedKey = (sched) => `cleared:${String(sched.weekStart).slice(0, 10)}`;
 export const noticedKey = (sched) => `noticed:${String(sched.weekStart).slice(0, 10)}`;
 const SWEEP_KEYS = 16;
@@ -678,39 +727,38 @@ export function newWeekEmbed(env, sched, { late = false } = {}) {
   const board = `[Board](${siteBase(env)})`;
   if (!late) {
     return {
-      title: "🧹 New week — the board is clear",
+      title: "🧹 New week — entries carried over",
       description:
-        "Last week's entries are gone and **joining is open now**. Run `/join <your TopstepX share link>` to enter.\n\n" +
-        `You can enter up to ${MAX_ACCOUNTS_PER_PERSON} accounts — \`/join\` each one — and \`/link\` a different account freely until the open. After that, accounts lock for the week — so enter the ones you actually want scored.\n\n` +
+        "If you traded last week you're **already in** — no need to `/join` again. Accounts that didn't trade last week dropped off; `/join` to bring one back.\n\n" +
+        `Until the open you can \`/join\` up to ${MAX_ACCOUNTS_PER_PERSON} accounts, \`/link\` to swap one, or \`/leave\` with a link to drop one. Once the week is live, an account that has traded is set until Friday's close.\n\n` +
         board,
       color: 0x5865f2
     };
   }
   // The week is already live: the notice is late (the pre-open fires were missed, or this
-  // is a fresh deploy mid-week). Anyone who was on last week's board and assumed they'd
-  // carried over needs to know to rejoin — a join now still scores the full week — and
-  // swaps are already locked. Worded to read right even if nobody was on last week's board.
+  // is a fresh deploy mid-week). Worded to read right even if nobody was on last week's board.
   return {
     title: "🧹 New week — the board has rolled over",
     description:
-      "Entries don't carry over between weeks. If you were on **last week's** board and want to compete this week, run `/join <your TopstepX share link>` again — a join now still scores the whole week.\n\n" +
-      "The week is live, so enter on the account you want scored: swaps are locked until Sunday.\n\n" +
+      "Last week's entries carried over, except accounts that didn't trade — `/join` to come back (a join now still scores the whole week).\n\n" +
+      "The week is live: new accounts wait for Sunday, but an account with no trades yet this week can still be swapped (`/link`) or dropped (`/leave` with its link).\n\n" +
       board,
     color: 0x5865f2
   };
 }
 
-// Delete last week's keys, up to SWEEP_KEYS of them. Returns how many competitor entries
-// were removed and whether anything is left for a later fire. list() is asked for only as
-// many keys as there is budget for, so a page can't overrun it, and its cursor/list_complete
-// say whether more remain. Keys that list() still reports but that are already gone (KV
-// lists are eventually consistent, and a previous fire may just have deleted them) read as
-// null: deleted again harmlessly, not counted.
-async function sweepLastWeek(env, sched) {
-  let cleared = 0;
+// Prune up to SWEEP_KEYS keys: accounts liveAccounts() no longer shows, entries left with none,
+// and tombstones from a finished week. Returns how many accounts went, whether anything changed
+// and whether keys remain for a later fire. list() is asked for only as many keys as there is
+// budget for, and its cursor/list_complete say whether more remain. Keys list() still reports
+// but that are already gone (KV lists are eventually consistent) read as null and are skipped.
+async function pruneRollover(env, sched) {
+  const active = await readActive(env, sched);
+  let pruned = 0;
+  let changed = false;
   let room = SWEEP_KEYS;
   let complete = true;
-  for (const [prefix, stale] of [["user:", staleEntry], ["left:", staleTomb]]) {
+  for (const prefix of ["user:", "left:"]) {
     let cursor;
     do {
       if (room <= 0) { complete = false; break; } // budget spent; the rest waits for the next fire
@@ -723,15 +771,24 @@ async function sweepLastWeek(env, sched) {
         } catch {
           /* unparsable — nothing this bot wrote; treat as dead */
         }
-        if (value && !stale(value, sched)) return; // this week's — keep
-        await env.ROSTER.delete(k.name);
-        if (value && prefix === "user:") cleared++;
+        if (prefix === "left:") {
+          if (value && !staleTomb(value, sched)) return;
+          await env.ROSTER.delete(k.name);
+          return;
+        }
+        if (!value) return;
+        const keep = liveAccounts(value, sched, active);
+        if (keep.length === value.accounts.length) return;
+        pruned += value.accounts.length - keep.length;
+        changed = true;
+        if (keep.length) await env.ROSTER.put(k.name, JSON.stringify({ ...value, accounts: keep }));
+        else await env.ROSTER.delete(k.name);
       }));
       cursor = page.list_complete ? undefined : page.cursor;
       if (cursor && room <= 0) complete = false;
     } while (cursor && room > 0);
   }
-  return { cleared, complete };
+  return { pruned, changed, complete };
 }
 
 async function rollOverWeek(env, sched) {
@@ -739,19 +796,21 @@ async function rollOverWeek(env, sched) {
   // design (frozen, matching the announced champion). Nothing to do until it rolls over.
   if (sched.phase === "done") return;
   const week = String(sched.weekStart).slice(0, 10);
-  // Sweep until it completes. The marker is written only then, and holds the last fire's
-  // count — a debugging breadcrumb (`cleared:2026-08-16 = "3"`), nothing branches on it.
+  // Prune until it completes. The marker is written only then, and holds the accounts pruned
+  // by the last fire — a debugging breadcrumb, nothing branches on it.
   if ((await env.ROSTER.get(clearedKey(sched))) == null) {
-    const r = await sweepLastWeek(env, sched);
-    console.log(`rollover: swept ${r.cleared} stale entr${r.cleared === 1 ? "y" : "ies"} for week ${week}${r.complete ? "" : " (more next fire)"}`);
+    const r = await pruneRollover(env, sched);
+    console.log(`rollover: pruned ${r.pruned} idle account(s) for week ${week}${r.complete ? "" : " (more next fire)"}`);
+    // The /roster cache still lists what was pruned (reads filter it out anyway); dropping it
+    // makes the next read rebuild from the pruned keys.
+    if (r.changed) await env.ROSTER.delete(ROSTER_ALL);
     if (!r.complete) return;
-    await env.ROSTER.put(clearedKey(sched), String(r.cleared));
+    await env.ROSTER.put(clearedKey(sched), String(r.pruned));
   }
-  // Then the notice, once. In the pre-open window it's the weekly "board is clear — /join";
+  // Then the notice, once. In the pre-open window it's the weekly "entries carried over";
   // any later and the pre-open fires were missed (or this is a fresh deploy mid-week), so it
-  // says so and tells last week's field to rejoin. Tracked separately from the sweep so a
-  // Discord hiccup retries the post (1 read + 1 fetch a fire) without re-running the
-  // sweep's LISTs every ten minutes.
+  // says the week is live. Tracked separately from the prune so a Discord hiccup retries the
+  // post (1 read + 1 fetch a fire) without re-running the prune's LISTs every ten minutes.
   if (await env.ROSTER.get(noticedKey(sched))) return;
   const late = sched.phase !== "pre";
   const { ok, configured, why } = await postToChannel(env, { embeds: [newWeekEmbed(env, sched, { late })] });
@@ -765,14 +824,16 @@ async function rollOverWeek(env, sched) {
 
 export default {
   async scheduled(event, env, ctx) {
-    // Phase-exclusive: the champion posts after Friday's close ("done"), the rollover sweep
-    // and notice run any time after Sunday's rollover ("pre" or live). Both self-gate on
-    // KV markers, so every cron fire runs both; the steady-state cost of a fire is 2 reads.
+    // Phase-exclusive: the champion post and the week's activity record run after Friday's
+    // close ("done"), the rollover prune and notice any time after Sunday's rollover ("pre"
+    // or live). All self-gate on KV markers, so every cron fire runs them; the steady-state
+    // cost of a fire is 2 reads.
     // One schedule per fire: it's the costly call here (Intl) and the 10 ms free-plan CPU
     // budget applies to cron fires too. Failures are logged rather than swallowed — enable
     // observability in wrangler.toml to see them in the dashboard.
     const sched = weekSchedule(new Date());
     ctx.waitUntil(announceChampion(env, sched).catch((e) => console.error("announce failed:", e)));
+    ctx.waitUntil(recordWeekActivity(env, sched).catch((e) => console.error("activity record failed:", e)));
     ctx.waitUntil(rollOverWeek(env, sched).catch((e) => console.error("rollover failed:", e)));
   },
 

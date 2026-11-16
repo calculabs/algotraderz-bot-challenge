@@ -93,6 +93,18 @@ export function intradayLowsByDay(trades = []) {
   return lows;
 }
 
+// The week's daily rows and today's live row, throwing when TopstepX doesn't answer instead of
+// reading as empty like the board's fetches do. The bot uses it to decide whether an account
+// already has a result this week, where "couldn't read" must never pass for "no trades".
+export async function fetchWeekActivity(accountId, range) {
+  const id = Number(accountId);
+  const [daily, todaystats] = await Promise.all([
+    call("/Statistics/daily", { method: "POST", body: dailyBody(id, range) }),
+    call(`/Statistics/todaystats?accountId=${id}`, { method: "POST", body: {} })
+  ]);
+  return { daily: Array.isArray(daily) ? daily : [], todaystats };
+}
+
 // Fetch everything we need for one account, scoped to a { start, end } window.
 export async function fetchAccountStats(accountId, range) {
   const id = Number(accountId);

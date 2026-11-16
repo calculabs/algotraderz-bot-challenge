@@ -22,12 +22,19 @@ const linkOption = { name: "link", description: "Your public TopstepX share link
 
 const commands = [
   { name: "join", description: `Join, or add another TopstepX account (up to ${MAX_ACCOUNTS_PER_PERSON}, before the open)`, options: [linkOption] },
-  { name: "link", description: "Update your TopstepX share link", options: [linkOption] },
-  { name: "mylink", description: "Show which account you're currently tracked on" },
+  {
+    name: "link",
+    description: "Swap one of your accounts (untraded ones any time; traded ones before the open)",
+    options: [
+      { name: "link", description: "The new TopstepX share link", type: 3, required: true },
+      { name: "replace", description: "The account it replaces, if you have more than one", type: 3, required: false }
+    ]
+  },
+  { name: "mylink", description: "Show the accounts you're tracked on" },
   {
     name: "leave",
-    description: "Remove yourself from the leaderboard, or just one of your accounts (before the open)",
-    options: [{ name: "link", description: "Drop only this account (before the open)", type: 3, required: false }]
+    description: "Remove yourself from the leaderboard, or just one of your accounts",
+    options: [{ name: "link", description: "Drop only this account (traded ones only before the open)", type: 3, required: false }]
   },
   { name: "leaderboard", description: "Get the link to the live leaderboard" },
   // Organizer commands are visible to everyone: `default_member_permissions: "0"` would

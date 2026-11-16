@@ -636,13 +636,13 @@
       const eligible = rows.filter((r) => !r.drawdown?.breached && (r.days_traded ?? 0) > 0 && Number.isFinite(Number(r.return_pct)));
       const showInvite = rows.length === 0 || eligible.length === 0;
       const preOpen = DATA.schedule?.phase === "pre";
-      // Pre-open is checked first: the Sunday reset empties the roster, so an empty board in
-      // that window is the new week starting, not a dead challenge nobody has ever entered.
+      // Pre-open is checked first: everyone is at zero in that window, so a board without
+      // results is the new week starting, not a dead challenge nobody has ever entered.
       const card = preOpen
-        ? { emoji: "🏁", title: "New week — the board is clear",
+        ? { emoji: "🏁", title: "New week — everyone starts at zero",
             sub: rows.length === 0
-              ? "Last week's entries are gone. Run <code>/join &lt;your TopstepX share link&gt;</code> in Discord to enter this week."
-              : "Everyone starts at zero. Trading opens at the CME open; results appear once the session gets going. Not in yet? <code>/join</code>." }
+              ? "Run <code>/join &lt;your TopstepX share link&gt;</code> in Discord to enter this week."
+              : "Entries carried over from last week. Trading opens at the CME open; results appear once the session gets going. Not in yet? <code>/join</code>." }
         : rows.length === 0
           ? { emoji: "🤖", title: "No bots on the board yet",
               sub: "Be the first — run <code>/join &lt;your TopstepX share link&gt;</code> in Discord." }
@@ -774,13 +774,13 @@
         <p class="hint">Your entry is tied to your Discord account — no login, and it works from any device. In the server, just run:</p>
         <div class="cmds">
           <div class="cmd"><code>/join <span class="arg">&lt;your TopstepX share link&gt;</span></code><span class="cmd-h">join, or add another account</span></div>
-          <div class="cmd"><code>/link <span class="arg">&lt;new link&gt;</span></code><span class="cmd-h">swap your account (before the open)</span></div>
+          <div class="cmd"><code>/link <span class="arg">&lt;new link&gt;</span></code><span class="cmd-h">swap an account (add <code>replace</code> if you have several)</span></div>
           <div class="cmd"><code>/mylink</code><span class="cmd-h">see what's on file</span></div>
-          <div class="cmd"><code>/leave</code><span class="cmd-h">drop out (add a link to drop one account, before the open)</span></div>
+          <div class="cmd"><code>/leave</code><span class="cmd-h">drop out (add a link to drop just one account)</span></div>
         </div>
         <a class="btn primary linkbtn" href="${esc(DISCORD_INVITE)}" target="_blank" rel="noreferrer">Open Discord →</a>
-        <p class="hint" style="margin-top:14px;">The board <b>clears every Sunday</b>, ~2h before the open, so entries never carry into a new week — <code>/join</code> each week with the account you want scored. From <b>Friday's close until that clear</b> the board is frozen: the finished week stays exactly as it was announced, and joining reopens the moment it wipes.</p>
-        <p class="hint" style="margin-top:14px;">You can enter <b>up to ${MAX_ACCOUNTS_PER_PERSON} accounts</b>: run <code>/join</code> once per account. Extra accounts and swaps go in <b>before the Sunday open</b>; once the week is live, your accounts are set until Friday's close. Each account is ranked on its own, and one person can hold at most ${podiumCap} podium spot${podiumCap === 1 ? "" : "s"}.</p>
+        <p class="hint" style="margin-top:14px;">Entries <b>carry over</b> from week to week — no need to <code>/join</code> again. At Sunday's rollover, ~2h before the open, an account that didn't trade that week drops off; <code>/join</code> to bring it back. From <b>Friday's close until that rollover</b> the board is frozen: the finished week stays exactly as it was announced.</p>
+        <p class="hint" style="margin-top:14px;">You can enter <b>up to ${MAX_ACCOUNTS_PER_PERSON} accounts</b>: run <code>/join</code> once per account. New accounts go in <b>before the Sunday open</b>. Once the week is live, an account that has traded is set until Friday's close; one with no trades yet can still be swapped or dropped. Each account is ranked on its own, and one person can hold at most ${podiumCap} podium spot${podiumCap === 1 ? "" : "s"}.</p>
         <p class="hint" style="margin-top:14px;">Your account size, P&amp;L and % return are read live from your public share link — turn on <b>Share</b> on your TopstepX stats page so the bot can see it.</p>
 
         <div class="divider"></div>
