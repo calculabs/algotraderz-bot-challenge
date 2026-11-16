@@ -332,8 +332,8 @@
   <script type="module">
     import { fetchShareStats, shareOf, shareAccountId, shareLabel } from "./src/share.mjs";
     import { resolveWeek } from "./src/calendar.mjs";
-    import { computeMetrics, buildRow, rankByScope, challengeInfo } from "./src/leaderboard.mjs";
-    import { fetchBotRoster, mergeRoster, eligibleForWeek, DISCORD_INVITE } from "./src/roster.mjs";
+    import { computeMetrics, buildRow, rankByScope, challengeInfo, podiumOf } from "./src/leaderboard.mjs";
+    import { fetchBotRoster, mergeRoster, eligibleForWeek, DISCORD_INVITE, MAX_ACCOUNTS_PER_PERSON } from "./src/roster.mjs";
 
     const $ = (id) => document.getElementById(id);
 
@@ -569,9 +569,10 @@
       // A champion must have actually competed — non-breached AND traded this week.
       // A just-joined account with no data (0.00%) isn't a winner.
       const survivors = ranked.filter((r) => !r.drawdown?.breached && (r.days_traded ?? 0) > 0 && Number.isFinite(Number(r.return_pct)));
-      const win = survivors[0];
+      const top = podiumOf(survivors, ch.podiumMaxPerPerson ?? 1);
+      const win = top[0];
       if (!win) return false;
-      const runners = survivors.slice(1, 3);
+      const runners = top.slice(1);
       const medal = ["🥈", "🥉"];
       // Wrap in a link to the competitor's share page when we have one, else a plain
       // div so the card styling always applies.
@@ -623,7 +624,7 @@
       // the not-started accounts, but with a thin field they'd still fill the top 3 — a
       // trophy and a LEADING pill on an account that hasn't placed a trade.
       const contenders = rows.filter((r) => r.traded && !r.drawdown?.breached);
-      const podium = contenders.slice(0, 3);
+      const podium = podiumOf(contenders, ch.podiumMaxPerPerson ?? 1);
       const onPodium = new Set(podium.map((r) => r.name));
       const rest = rows.filter((r) => !onPodium.has(r.name));
       const order = [podium[2], podium[0], podium[1]];
@@ -758,6 +759,7 @@
     /* ---------- manage panel (read-only; managing your link happens in Discord) ---------- */
     function renderPanel() {
       const ps = CONFIG.participants || [];
+      const podiumCap = challengeInfo(CONFIG.challenge).podiumMaxPerPerson;
       const rosterHtml = ps.length ? ps.map((p) => {
         const share = shareOf(p);
         return `<div class="rrow">
@@ -771,13 +773,14 @@
         <h2>Manage your link in Discord</h2>
         <p class="hint">Your entry is tied to your Discord account — no login, and it works from any device. In the server, just run:</p>
         <div class="cmds">
-          <div class="cmd"><code>/join <span class="arg">&lt;your TopstepX share link&gt;</span></code><span class="cmd-h">join, or update your link</span></div>
-          <div class="cmd"><code>/link <span class="arg">&lt;new link&gt;</span></code><span class="cmd-h">swap accounts (before the open)</span></div>
+          <div class="cmd"><code>/join <span class="arg">&lt;your TopstepX share link&gt;</span></code><span class="cmd-h">join, or add another account</span></div>
+          <div class="cmd"><code>/link <span class="arg">&lt;new link&gt;</span></code><span class="cmd-h">swap your account (before the open)</span></div>
           <div class="cmd"><code>/mylink</code><span class="cmd-h">see what's on file</span></div>
-          <div class="cmd"><code>/leave</code><span class="cmd-h">drop out</span></div>
+          <div class="cmd"><code>/leave</code><span class="cmd-h">drop out (add a link to drop one account, before the open)</span></div>
         </div>
         <a class="btn primary linkbtn" href="${esc(DISCORD_INVITE)}" target="_blank" rel="noreferrer">Open Discord →</a>
         <p class="hint" style="margin-top:14px;">The board <b>clears every Sunday</b>, ~2h before the open, so entries never carry into a new week — <code>/join</code> each week with the account you want scored. From <b>Friday's close until that clear</b> the board is frozen: the finished week stays exactly as it was announced, and joining reopens the moment it wipes.</p>
+        <p class="hint" style="margin-top:14px;">You can enter <b>up to ${MAX_ACCOUNTS_PER_PERSON} accounts</b>: run <code>/join</code> once per account. Extra accounts and swaps go in <b>before the Sunday open</b>; once the week is live, your accounts are set until Friday's close. Each account is ranked on its own, and one person can hold at most ${podiumCap} podium spot${podiumCap === 1 ? "" : "s"}.</p>
         <p class="hint" style="margin-top:14px;">Your account size, P&amp;L and % return are read live from your public share link — turn on <b>Share</b> on your TopstepX stats page so the bot can see it.</p>
 
         <div class="divider"></div>

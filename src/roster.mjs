@@ -9,12 +9,16 @@
 // Leave empty to run off participants.json alone (e.g. before the bot is deployed).
 export const ROSTER_ENDPOINT = "https://algotraderz-bot.calculabs.workers.dev/roster";
 
+// How many accounts one person can enter in a week. The bot enforces it on /join; the board
+// states it in the Join panel.
+export const MAX_ACCOUNTS_PER_PERSON = 3;
+
 // Discord server invite — surfaced in the Manage panel so people know where to go.
 export const DISCORD_INVITE = "https://discord.gg/rS75G8mbg";
 
-// Fetch the bot-owned roster ([{ name, url, joinedAt }]). Returns [] on any error so the
-// board degrades gracefully to participants.json. `joinedAt` falls back to `updatedAt` for
-// entries written before the bot tracked it.
+// Fetch the bot-owned roster: one row per entered account ([{ name, url, joinedAt, owner }],
+// owner = the Discord id that entered it; a person's extra accounts are named "alice #2").
+// Returns [] on any error so the board degrades gracefully to participants.json.
 export async function fetchBotRoster(endpoint = ROSTER_ENDPOINT) {
   if (!endpoint) return [];
   try {
@@ -22,7 +26,7 @@ export async function fetchBotRoster(endpoint = ROSTER_ENDPOINT) {
     if (!res.ok) return [];
     const data = await res.json();
     return (Array.isArray(data) ? data : [])
-      .map((e) => ({ name: e.name, url: e.url, joinedAt: e.joinedAt ?? e.updatedAt ?? null }))
+      .map((e) => ({ name: e.name, url: e.url, joinedAt: e.joinedAt ?? null, owner: e.owner ?? null }))
       .filter((e) => e.name && e.url);
   } catch {
     return [];

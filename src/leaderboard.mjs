@@ -155,6 +155,9 @@ export function computeMetrics(stats, weekDays = [], { currentDay = 0 } = {}) {
 export function buildRow(participant, accountId, metrics, { source, shared = null, error = null } = {}) {
   return {
     name: participant.name ?? participant.discord ?? String(accountId ?? "Unknown"),
+    // Who entered it: the Discord id for bot entries (one person can enter several accounts),
+    // null for seed entries, which each stand alone.
+    owner: participant.owner ?? null,
     account_id: accountId ?? null,
     url: participant.url ?? (accountId != null ? `https://topstepx.com/share/stats?share=${accountId}` : null),
     source,
@@ -178,6 +181,7 @@ export function flattenScope(row, scope, currentDay = 0) {
   return {
     rank: null,
     name: row.name,
+    owner: row.owner ?? null,
     account_id: row.account_id,
     url: row.url,
     account_size: row.account_size,
@@ -227,8 +231,27 @@ export function challengeInfo(challenge = {}) {
   return {
     title: challenge.title ?? "Bot Challenge",
     org: challenge.org ?? "Algo Traderz",
-    rules: challenge.rules ?? ["Highest % return wins", "No manual trades", "Max loss limit"]
+    rules: challenge.rules ?? ["Highest % return wins", "No manual trades", "Max loss limit"],
+    podiumMaxPerPerson: challenge.podiumMaxPerPerson ?? 1
   };
+}
+
+// The podium from rows already in rank order: the top `places`, taking at most `perOwner` from
+// one person, so someone with several accounts can't fill it alone. Rows without an owner
+// (seed entries) each count as their own person. The board and the bot's champion post both
+// pick through here.
+export function podiumOf(rows, perOwner, places = 3) {
+  const taken = new Map();
+  const podium = [];
+  for (const row of rows) {
+    if (podium.length >= places) break;
+    const owner = row.owner ?? `name:${row.name}`;
+    const n = taken.get(owner) ?? 0;
+    if (n >= perOwner) continue;
+    taken.set(owner, n + 1);
+    podium.push(row);
+  }
+  return podium;
 }
 
 export function toCsv(rows) {

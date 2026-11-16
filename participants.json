@@ -6,7 +6,8 @@
       "Highest % return wins",
       "No manual trades",
       "Max loss limit"
-    ]
+    ],
+    "podiumMaxPerPerson": 2
   },
   "participants": [
     {

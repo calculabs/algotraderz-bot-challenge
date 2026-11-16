@@ -6,6 +6,8 @@
 // instantly (best for setup + iteration). Without it, they register globally and can
 // take up to ~1h to propagate. Re-run any time you change the command list below.
 
+import { MAX_ACCOUNTS_PER_PERSON } from "../../src/roster.mjs";
+
 const APP = process.env.DISCORD_APP_ID;
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const GUILD = process.env.DISCORD_GUILD_ID;
@@ -19,10 +21,14 @@ if (!APP || !TOKEN) {
 const linkOption = { name: "link", description: "Your public TopstepX share link", type: 3, required: true };
 
 const commands = [
-  { name: "join", description: "Join the leaderboard with your TopstepX share link", options: [linkOption] },
+  { name: "join", description: `Join, or add another TopstepX account (up to ${MAX_ACCOUNTS_PER_PERSON}, before the open)`, options: [linkOption] },
   { name: "link", description: "Update your TopstepX share link", options: [linkOption] },
   { name: "mylink", description: "Show which account you're currently tracked on" },
-  { name: "leave", description: "Remove yourself from the leaderboard" },
+  {
+    name: "leave",
+    description: "Remove yourself from the leaderboard, or just one of your accounts (before the open)",
+    options: [{ name: "link", description: "Drop only this account (before the open)", type: 3, required: false }]
+  },
   { name: "leaderboard", description: "Get the link to the live leaderboard" },
   // Organizer commands are visible to everyone: `default_member_permissions: "0"` would
   // hide them from all non-Administrators, and the organizers are listed in ADMIN_IDS,

@@ -22,6 +22,8 @@
 // from your laptop to publish the command list.
 
 import { weekSchedule } from "../../src/calendar.mjs";
+import { MAX_ACCOUNTS_PER_PERSON } from "../../src/roster.mjs";
+import { podiumOf } from "../../src/leaderboard.mjs";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const CORS = { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type" };
@@ -128,13 +130,18 @@ async function rebuildRoster(env) {
   return entries;
 }
 
+// The board's roster: one row per entered account, owner = the Discord id that entered it.
 async function readRoster(env, sched) {
   const cached = await env.ROSTER.get(ROSTER_ALL, "json");
   const all = Array.isArray(cached) ? cached : await rebuildRoster(env); // cold start / first deploy
   // The cache can still hold last week's entries — the sweep hasn't reached them, or a
   // rebuild raced it. Filtered here, so the board is clear at the rollover no matter what KV
   // holds, and a stuck cron can never carry a roster into the next week again.
-  return all.filter((e) => !staleEntry(e, sched));
+  return all
+    .filter((e) => !staleEntry(e, sched))
+    .flatMap((e) => e.accounts.map((a) => ({
+      name: accountName(e.name, a.slot), url: a.url, accountId: a.accountId, joinedAt: a.joinedAt, owner: e.discordId
+    })));
 }
 
 // ---- Discord request-signature verification (Ed25519 via Web Crypto) ----
@@ -263,89 +270,123 @@ const truthy = (v) => /^(1|true|on|yes)$/i.test(String(v ?? "").trim());
 const COMES_BACK_SUNDAY =
   "The board **clears every Sunday**, about 2h before the open, and joining opens the moment it does — `/join` then with the account you want scored for the week.";
 
-// Shared by /join and /link. Mid-week we lock the thing that actually games the
-// competition — SWAPPING to a different account (via /link, or a re-/join with a new
-// account). A brand-new late join stays open (friendly) unless the organizer sets
-// LOCK_JOIN. Re-submitting your existing account is always a harmless no-op.
-async function upsertLink(interaction, env, { updating }) {
+// ---- entries: up to MAX_ACCOUNTS_PER_PERSON accounts per person ----
+//
+//   user:<id> -> { discordId, name, accounts: [{ accountId, url, slot, joinedAt }], updatedAt }
+//   left:<id> -> { discordId, accounts, updatedAt, leftAt }   (the /leave tombstone)
+//
+// Each account is its own row on the board, named by its slot: "alice", "alice #2". Slots are
+// assigned once, so a name never moves to a different account.
+//
+// What can change when, all to stop picking accounts after their P&L is known (TopstepX scores
+// every account from the Sunday open, whenever it was entered):
+//
+//   pre (Sun rollover -> open)   join, add accounts, swap, drop single accounts — anything.
+//   live (open -> Fri close)     a person's FIRST account can still join late (unless
+//                                LOCK_JOIN). Adding another, swapping, or dropping one of
+//                                several is locked: you can only drop out entirely, and a
+//                                rejoin brings back every account you left with.
+//   done (Fri close -> rollover) frozen — see "the week, in three states" above.
+const accountName = (name, slot) => (slot === 1 ? name : `${name} #${slot}`);
+const freeSlot = (accounts) => {
+  let slot = 1;
+  while (accounts.some((a) => a.slot === slot)) slot++;
+  return slot;
+};
+const accountLines = (name, accounts) =>
+  accounts.map((a) => `**${accountName(name, a.slot)}** — account **${a.accountId}**\n${a.url}`).join("\n");
+
+const NOT_A_LINK =
+  "❌ That doesn't look like a TopstepX share link. Copy it from your stats page — e.g. `https://topstepx.com/share/stats?share=24801853`.";
+const FROZEN = `🧊 The week is finished and the board is frozen until it clears. ${COMES_BACK_SUNDAY}`;
+const SET_FOR_THE_WEEK =
+  "Once the week is live your accounts are set until Friday's close: adding, swapping and dropping single accounts reopen at Sunday's clear, ~2h before the open.";
+
+// This week's state for one person: their entry, and a tombstone that can gate a rejoin. Only
+// a tombstone written after this week opened counts — leaving before the open (or in a week you
+// sat out) pins nobody, the same staleEntry() test as for entries.
+async function personState(env, u, sched) {
+  const found = await env.ROSTER.get(rosterKey(u.id), "json");
+  const entry = found && !staleEntry(found, sched) ? found : null;
+  const left = entry ? null : await env.ROSTER.get(leftKey(u.id), "json");
+  const tomb = left && stamp(left.leftAt) >= stamp(sched.weekStart) && !staleEntry(left, sched) ? left : null;
+  return { entry, left, tomb };
+}
+
+async function saveAccounts(env, u, state, accounts) {
+  await env.ROSTER.put(rosterKey(u.id), JSON.stringify({
+    discordId: u.id, name: displayName(u), accounts, updatedAt: new Date().toISOString()
+  }));
+  if (state.left) await env.ROSTER.delete(leftKey(u.id)); // they're back; a stale one goes too
+  await rebuildRoster(env);
+}
+
+async function sharingNote(accountId) {
+  return (await isShared(accountId))
+    ? ""
+    : `\n⚠️ I couldn't confirm public sharing is on for **${accountId}**. If it doesn't show on the board within a minute, turn on **Share** on that TopstepX stats page.`;
+}
+
+async function joinAccount(interaction, env) {
   const u = userOf(interaction);
   const accountId = parseAccountId(optionValue(interaction, "link"));
-  if (accountId == null) {
-    return reply("❌ That doesn't look like a TopstepX share link. Copy it from your stats page — e.g. `https://topstepx.com/share/stats?share=24801853`.");
-  }
+  if (accountId == null) return reply(NOT_A_LINK);
   const sched = weekSchedule(new Date());
   // Checked before anything is read or written: between Friday's close and Sunday's rollover
-  // there is no week to enter. Turning people away here is kinder than taking the entry
-  // and dropping it on Sunday — nobody loses a week over it, since a join any time during
-  // the live week still scores the full week (TopstepX reports P&L from the Sunday open,
-  // not from when you joined).
-  if (sched.phase === "done") {
-    return reply(`🧊 The week is finished and the board is frozen until it clears. ${COMES_BACK_SUNDAY}`);
-  }
-  // Last week's entry is not "existing" — it's gone at the rollover whether or not the sweep
-  // has deleted the key yet. Overwriting it below IS the cleanup, and the joiner is a fresh
-  // entrant: any account, and a joinedAt of today.
-  const found = await env.ROSTER.get(rosterKey(u.id), "json");
-  const existing = found && !staleEntry(found, sched) ? found : null;
-  // /leave leaves a tombstone, so leaving and rejoining can't launder an account swap: a
-  // trader having a bad week could otherwise /leave, /join a different (better) account,
-  // and land as a "brand-new join" — which LOCK_JOIN lets through by design. The account
-  // you entered the week on is the one you're scored on, however you re-enter.
-  const left = existing ? null : await env.ROSTER.get(leftKey(u.id), "json");
-  // Only a tombstone from THIS week can gate a rejoin. One from a week you sat out is just
-  // history — you're a legitimate new entrant this week and may enter on any account. And it
-  // has to record an entry INTO this week: leaving a carried-over entry (the 2026-08-17 trap,
-  // where the old /leave tombstoned last week's entry and the tombstone then pinned the
-  // trader to an account they'd reset over the weekend) pins nobody — that entry was never
-  // this week's. The tombstone carries the entry's own stamps, so staleEntry() judges it.
-  const weekStart = stamp(sched.weekStart);
-  const tomb = left && stamp(left.leftAt) >= weekStart && !staleEntry(left, sched) ? left : null;
-  const priorAccount = existing?.accountId ?? tomb?.accountId ?? null;
-  const isSwap = priorAccount != null && priorAccount !== accountId;
-  const isNewJoin = !existing && !tomb;
-  const gated = isSwap || (isNewJoin && truthy(env.LOCK_JOIN));
-  // The freeze already returned above, so by here the week is either live (swaps locked)
-  // or in the pre-open window right after the rollover (everything allowed).
-  if (gated && sched.phase !== "pre") {
-    if (isSwap && tomb) {
-      return reply(`🔒 Leaving doesn't reset your account. You entered this week on account **${priorAccount}** — you can rejoin on that one, but not on a different account mid-week. ${COMES_BACK_SUNDAY}`);
+  // there is no week to enter.
+  if (sched.phase === "done") return reply(FROZEN);
+  const state = await personState(env, u, sched);
+  const accounts = state.entry?.accounts ?? [];
+  const mine = accounts.find((a) => a.accountId === accountId);
+  if (mine) return reply(`✅ Account **${accountId}** is already on the board as **${accountName(displayName(u), mine.slot)}**.`);
+  if (sched.phase !== "pre") {
+    if (state.entry) return reply(`🔒 You can't add another account mid-week. ${SET_FOR_THE_WEEK}`);
+    if (state.tomb) {
+      const back = state.tomb.accounts;
+      if (!back.some((a) => a.accountId === accountId)) {
+        return reply(`🔒 Leaving doesn't reset your accounts. You entered this week on ${back.map((a) => `**${a.accountId}**`).join(", ")} — you can rejoin with ${back.length === 1 ? "it" : "them"}, but not on a different account mid-week. ${COMES_BACK_SUNDAY}`);
+      }
+      // A rejoin restores everything you left with, so leaving can't be used to drop a loser.
+      await saveAccounts(env, u, state, back);
+      return reply(`✅ Welcome back — ${back.length === 1 ? "your account is" : `all ${back.length} of your accounts are`} on the board again:\n${accountLines(displayName(u), back)}`);
     }
-    return reply(isSwap
-      ? `🔒 You can't swap accounts mid-week. ${COMES_BACK_SUNDAY}`
-      : `🔒 Joining is closed while the week is live. ${COMES_BACK_SUNDAY}`);
+    if (truthy(env.LOCK_JOIN)) return reply(`🔒 Joining is closed while the week is live. ${COMES_BACK_SUNDAY}`);
   }
-  // joinedAt is when this person FIRST entered, and it survives link swaps — the board uses
-  // it to decide which week they belong to, so an /link update must not move it forward
-  // (that would silently eject them from the week they're already competing in).
-  const now = new Date().toISOString();
-  const entry = {
-    discordId: u.id,
-    name: displayName(u),
-    url: shareUrl(accountId),
-    accountId,
-    // Fall back to updatedAt for entries written before joinedAt existed: stamping `now`
-    // would date a long-standing competitor to today and drop them out of the week they
-    // already competed in. No KV backfill needed — this converges them on first write.
-    // A rejoin restores the original join date from the tombstone — otherwise /leave +
-    // /join would re-date them to today and change which week they belong to.
-    joinedAt: existing?.joinedAt ?? existing?.updatedAt ?? tomb?.joinedAt ?? now,
-    updatedAt: now
-  };
-  await env.ROSTER.put(rosterKey(u.id), JSON.stringify(entry));
-  if (left) await env.ROSTER.delete(leftKey(u.id)); // they're back; clear it either way
-  await rebuildRoster(env);
-  const shared = await isShared(accountId);
-  if (!shared) {
-    return reply(`✅ ${updating ? "Updated" : "Added"} to account **${accountId}** — but I couldn't confirm public sharing is on. If you don't show up on the board within a minute, open your TopstepX stats page, turn on **Share**, and run \`/link\` again.`);
+  if (accounts.length >= MAX_ACCOUNTS_PER_PERSON) {
+    return reply(`You already have ${MAX_ACCOUNTS_PER_PERSON} accounts on the board, the most allowed. Drop one with \`/leave\` and its link first (before the open).`);
   }
-  return updating
-    ? reply(`🔁 Updated — you're now tracked on account **${accountId}**.`)
-    : reply(`✅ You're on the board as **${entry.name}** (account **${accountId}**). Update anytime with \`/link\`, or \`/leave\` to drop out.`);
+  const slot = freeSlot(accounts);
+  const next = [...accounts, { accountId, url: shareUrl(accountId), slot, joinedAt: new Date().toISOString() }];
+  await saveAccounts(env, u, state, next);
+  const name = accountName(displayName(u), slot);
+  const more = next.length < MAX_ACCOUNTS_PER_PERSON
+    ? ` You can enter up to ${MAX_ACCOUNTS_PER_PERSON} accounts — \`/join\` each one${sched.phase === "pre" ? " before the open" : " next week before the open"}.`
+    : "";
+  return reply(`✅ You're on the board as **${name}** (account **${accountId}**).${more}${await sharingNote(accountId)}`);
+}
+
+// /link swaps your one account for another. With several, say which goes: /leave <link> + /join.
+async function swapAccount(interaction, env) {
+  const u = userOf(interaction);
+  const accountId = parseAccountId(optionValue(interaction, "link"));
+  if (accountId == null) return reply(NOT_A_LINK);
+  const sched = weekSchedule(new Date());
+  if (sched.phase === "done") return reply(FROZEN);
+  const state = await personState(env, u, sched);
+  if (!state.entry) return joinAccount(interaction, env);
+  const accounts = state.entry.accounts;
+  if (accounts.some((a) => a.accountId === accountId)) return reply(`✅ Account **${accountId}** is already on the board.`);
+  if (sched.phase !== "pre") return reply(`🔒 You can't swap accounts mid-week. ${SET_FOR_THE_WEEK}`);
+  if (accounts.length > 1) {
+    return reply(`You have ${accounts.length} accounts on the board — drop the old one with \`/leave\` and its link, then \`/join\` the new one.\n${accountLines(displayName(u), accounts)}`);
+  }
+  await saveAccounts(env, u, state, [{ accountId, url: shareUrl(accountId), slot: 1, joinedAt: new Date().toISOString() }]);
+  return reply(`🔁 Updated — you're now tracked on account **${accountId}**.${await sharingNote(accountId)}`);
 }
 
 const COMMANDS = {
-  join: (interaction, env) => upsertLink(interaction, env, { updating: false }),
-  link: (interaction, env) => upsertLink(interaction, env, { updating: true }),
+  join: joinAccount,
+  link: swapAccount,
 
   async mylink(interaction, env) {
     const u = userOf(interaction);
@@ -356,9 +397,11 @@ const COMMANDS = {
     const frozen = sched.phase === "done";
     const next = frozen
       ? `This was **last week's** entry — it clears on Sunday. ${COMES_BACK_SUNDAY}`
-      : "Change it with `/link`, or `/leave` to drop out.";
+      : sched.phase === "pre"
+        ? `Add accounts with \`/join\` (up to ${MAX_ACCOUNTS_PER_PERSON}), swap with \`/link\`, or \`/leave\` to drop out.`
+        : `${SET_FOR_THE_WEEK} \`/leave\` drops you out entirely.`;
     return entry
-      ? reply(`🔎 You're tracked on account **${entry.accountId}**\n${entry.url}\n${next}`)
+      ? reply(`🔎 You're on the board with:\n${accountLines(entry.name, entry.accounts)}\n${next}`)
       : reply(frozen
         ? `You're not on the board. ${COMES_BACK_SUNDAY}`
         : "You're not on the board yet. Add yourself with `/join <your TopstepX share link>`.");
@@ -366,35 +409,45 @@ const COMMANDS = {
 
   async leave(interaction, env) {
     const u = userOf(interaction);
+    const linkOption = optionValue(interaction, "link");
     const existing = await env.ROSTER.get(rosterKey(u.id), "json");
     if (!existing) return reply("You weren't on the board.");
     const sched = weekSchedule(new Date());
     // Last week's entry, still in KV only because the sweep hasn't reached it. It was never an
-    // entry into THIS week, so no tombstone: one here would pin them to an account they never
-    // entered this week on — the exact trap of 2026-08-17, when a carried-over entry was left
-    // and the tombstone then blocked the rejoin on the account they'd actually moved to.
+    // entry into THIS week, so no tombstone: one here would pin them to accounts they never
+    // entered this week on (the 2026-08-17 trap).
     if (staleEntry(existing, sched)) {
       await env.ROSTER.delete(rosterKey(u.id));
       await rebuildRoster(env);
       return reply("That was **last week's** entry — entries don't carry over, so you were already off the board. `/join` to enter this week.");
     }
-    // Frozen too, and for once the refusal costs nothing: the week is already scored, and
-    // Sunday's rollover drops you anyway. Deleting now would only rewrite a finished week's
-    // standings — after the champion has been announced off them.
+    // Frozen too: the week is already scored, and Sunday's rollover drops you anyway.
     if (sched.phase === "done") {
       return reply(`🧊 The week is finished, so there's nothing left to drop out of — and the board is frozen until it clears on Sunday. **You're out by default**: entries don't carry over, so just don't \`/join\` next week.`);
     }
+    if (linkOption != null) {
+      const accountId = parseAccountId(linkOption);
+      if (accountId == null) return reply(NOT_A_LINK);
+      if (!existing.accounts.some((a) => a.accountId === accountId)) return reply(`Account **${accountId}** isn't one of yours on the board.`);
+      if (existing.accounts.length > 1) {
+        // Dropping one of several after seeing the week's P&L is picking winners.
+        if (sched.phase !== "pre") return reply(`🔒 You can't drop a single account mid-week. ${SET_FOR_THE_WEEK} \`/leave\` without a link drops you out entirely.`);
+        const rest = existing.accounts.filter((a) => a.accountId !== accountId);
+        await saveAccounts(env, u, { left: null }, rest);
+        return reply(`👋 Dropped account **${accountId}**. Still on the board:\n${accountLines(existing.name, rest)}`);
+      }
+    }
     await env.ROSTER.delete(rosterKey(u.id));
-    // Remember the account they entered on (see leftKey) so rejoining can't swap it. The
-    // entry's own joinedAt/updatedAt ride along so /join can tell a this-week tombstone
-    // from one left over from a carried-over entry (same staleEntry() test as the entry).
+    // Remember the accounts they left with (see leftKey) so a rejoin can't swap or drop any.
+    // The entry's own updatedAt rides along so staleEntry() can judge the tombstone.
     await env.ROSTER.put(leftKey(u.id), JSON.stringify({
-      discordId: u.id, accountId: existing.accountId,
-      joinedAt: existing.joinedAt ?? existing.updatedAt, updatedAt: existing.updatedAt,
-      leftAt: new Date().toISOString()
+      discordId: u.id, accounts: existing.accounts, updatedAt: existing.updatedAt, leftAt: new Date().toISOString()
     }));
     await rebuildRoster(env);
-    return reply(`👋 Removed you from the board. You can rejoin anytime with \`/join\` — during a live week it has to be the same account (**${existing.accountId}**).`);
+    const n = existing.accounts.length;
+    return reply(sched.phase === "pre"
+      ? `👋 Removed you from the board. \`/join\` again any time.`
+      : `👋 Removed you from the board. You can rejoin any time this week with \`/join\` — ${n === 1 ? `on the same account (**${existing.accounts[0].accountId}**)` : `it brings back all ${n} accounts you left with`}.`);
   },
 
   leaderboard(interaction, env) {
@@ -422,7 +475,7 @@ const COMMANDS = {
   async announce(interaction, env) {
     const u = userOf(interaction);
     if (!adminIds(env).includes(u.id)) return reply("⛔ Only the organizer can post announcements.");
-    const podium = pickPodium((await fetchStandings(env))?.rows);
+    const podium = pickPodium(await fetchStandings(env));
     if (!podium.length) return reply("Nothing to announce yet — no eligible (non-breached) accounts with results on the board.");
     const { ok, why } = await postToChannel(env, { embeds: [championEmbed(podium, env)] });
     if (!ok) return reply(`⚠️ Couldn't post: ${why}.`);
@@ -457,12 +510,13 @@ async function fetchStandings(env) {
 }
 
 // Top three champion-eligible accounts by % return — non-breached AND actually traded
-// this week (a just-joined 0-trade account is not a champion).
-export function pickPodium(rows) {
-  return (rows || [])
+// this week (a just-joined 0-trade account is not a champion) — with no more than the
+// challenge's podiumMaxPerPerson from one person.
+export function pickPodium(standings) {
+  const ranked = (standings?.rows || [])
     .filter((r) => !r.drawdown?.breached && Number(r.overall?.trades) > 0 && Number.isFinite(Number(r.overall?.return_pct)))
-    .sort((a, b) => b.overall.return_pct - a.overall.return_pct)
-    .slice(0, 3);
+    .sort((a, b) => b.overall.return_pct - a.overall.return_pct);
+  return podiumOf(ranked, standings?.challenge?.podiumMaxPerPerson ?? 1);
 }
 
 export function championEmbed(podium, env) {
@@ -546,7 +600,7 @@ async function announceChampion(env, sched) {
   if (sched.phase !== "done") return; // week still running (or pre-season)
   const marker = announcedKey(sched);
   if (await env.ROSTER.get(marker)) return; // already crowned this week
-  const podium = pickPodium((await fetchStandings(env))?.rows);
+  const podium = pickPodium(await fetchStandings(env));
   if (!podium.length) { await env.ROSTER.put(marker, "1"); return; } // nobody to crown; don't retry
   const { ok, configured, why } = await postToChannel(env, { embeds: [championEmbed(podium, env)] });
   // Only mark done on a real post (or when announcements are off), so a fixable failure retries next fire.
@@ -588,7 +642,7 @@ export function newWeekEmbed(env, sched, { late = false } = {}) {
       title: "🧹 New week — the board is clear",
       description:
         "Last week's entries are gone and **joining is open now**. Run `/join <your TopstepX share link>` to enter.\n\n" +
-        "Until the open you can `/link` a different account freely. After that, swaps lock for the week — so enter on the account you actually want scored.\n\n" +
+        `You can enter up to ${MAX_ACCOUNTS_PER_PERSON} accounts — \`/join\` each one — and \`/link\` a different account freely until the open. After that, accounts lock for the week — so enter the ones you actually want scored.\n\n` +
         board,
       color: 0x5865f2
     };
