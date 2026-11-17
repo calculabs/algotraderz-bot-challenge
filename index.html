@@ -93,6 +93,8 @@
     .pod .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
     .pod .row .k { color: var(--muted-dim); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; font-weight: 600; }
     .pod .row .v { font-weight: 700; font-size: 15px; }
+    .pod .rows.xs { margin-top: 10px; padding-top: 10px; gap: 5px; }
+    .pod .rows.xs .v { font-size: 13px; }
 
     .pod-1 {
       transform: translateY(-14px); border-color: rgba(244, 192, 79, .55);
@@ -143,6 +145,7 @@
     .item .who .nm { min-width: 0; font-weight: 700; font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .item .who .tag { flex: none; font-size: 11px; font-weight: 700; letter-spacing: .12em; color: var(--red); }
     .item .sub { color: var(--muted-dim); font-size: 13px; margin-top: 3px; overflow-wrap: anywhere; }
+    .item .sub.xs { margin-top: 1px; }
     .item .big { flex: none; text-align: right; font-weight: 800; font-size: 20px; white-space: nowrap; }
     .item.elim { opacity: .62; }
     .item.elim .num { background: rgba(247,112,102,.10); color: var(--red); font-size: 18px; }
@@ -236,6 +239,9 @@
       .pod .row { flex-direction: column; align-items: flex-start; gap: 1px; }
       .pod .row .k { font-size: 8.5px; letter-spacing: .07em; }
       .pod .row .v { font-size: 13px; }
+      .pod .rows.xs { gap: 4px; margin-top: 8px; padding-top: 8px; }
+      .pod .rows.xs .row { flex-direction: row; align-items: baseline; justify-content: space-between; gap: 4px; }
+      .pod .rows.xs .v { font-size: 11.5px; }
       .lead-pill { font-size: 10px; padding: 7px 4px; margin-top: 10px; letter-spacing: 0; }
       .dd { margin-top: 9px; } .dd-label { font-size: 9px; letter-spacing: .02em; } .dd-tag { font-size: 9.5px; }
       .item { padding: 14px 15px; gap: 11px; }
@@ -417,6 +423,17 @@
       week:  (r) => `<div class="row"><span class="k">Weekly P&L</span><span class="v ${cls(r.week_pnl)}">${money(r.week_pnl, { sign: true })}</span></div>`,
       today: (r) => `<div class="row"><span class="k">Today P&L</span><span class="v ${cls(r.today_pnl)}">${money(r.today_pnl, { sign: true })}</span></div>`
     };
+    // Trades and the realized-P&L excursion for the selected window: MFE is the highest the running
+    // net P&L reached, MAE the lowest, both from the window's open. Whole dollars; "—" without a trade list.
+    const exc = (n) => (n == null ? "—" : (n > 0 ? "+" : n < 0 ? "-" : "") + "$" + Math.abs(Math.round(n)).toLocaleString());
+    const MFE_TIP = "MFE: the highest the running net P&L got in this window";
+    const MAE_TIP = "MAE: the lowest the running net P&L got in this window";
+    const statRows = (r) => `<div class="rows xs">
+            <div class="row"><span class="k">Trades</span><span class="v">${r.trades}</span></div>
+            <div class="row" title="${MFE_TIP}"><span class="k">MFE</span><span class="v ${cls(r.mfe)}">${exc(r.mfe)}</span></div>
+            <div class="row" title="${MAE_TIP}"><span class="k">MAE</span><span class="v ${cls(r.mae)}">${exc(r.mae)}</span></div>
+          </div>`;
+    const statSub = (r) => `<div class="sub xs">${r.trades} trade${r.trades === 1 ? "" : "s"} · <span title="${MFE_TIP}">MFE <span class="${cls(r.mfe)}">${exc(r.mfe)}</span></span> · <span title="${MAE_TIP}">MAE <span class="${cls(r.mae)}">${exc(r.mae)}</span></span></div>`;
     const headRows = (row) => {
       if (METRIC === "wpl") return R.week(row) + R.wRet(row) + R.today(row);
       if (METRIC === "today") return R.today(row) + R.tRet(row) + R.week(row);
@@ -461,7 +478,7 @@
           <div class="rows">
             ${headRows(row)}
             <div class="row"><span class="k">Account</span><span class="v" style="color:var(--muted)">${sizeShort(row.account_size)}</span></div>
-          </div>${ddHtml(row.drawdown)}${lead}
+          </div>${statRows(row)}${ddHtml(row.drawdown)}${lead}
         </div>`, row.url);
     }
     const listItem = (row) => {
@@ -481,7 +498,7 @@
         <div class="num">${idle ? "·" : row.rank}</div>
         <div class="main">
           <div class="who"><span class="nm">${esc(row.name)}</span>${tag}</div>
-          <div class="sub">${sub}</div>
+          <div class="sub">${sub}</div>${idle ? "" : statSub(row)}
         </div>
         ${big}
       </div>`, row.url);

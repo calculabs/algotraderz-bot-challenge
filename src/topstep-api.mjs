@@ -6,6 +6,8 @@
 // responses set `Access-Control-Allow-Origin: *`, and no cookie / token / auth
 // header is involved. So we can skip a headless browser entirely and just fetch.
 
+import { tradeNet } from "./leaderboard.mjs";
+
 // This module runs in both Node (the scrape) and the browser (the live "Add
 // competitor" panel), so read the override defensively — `process` is undefined
 // in the browser.
@@ -58,17 +60,18 @@ export async function checkSharing(accountId) {
 const dailyBody = (id, range) => ({ tradingAccountId: id, startTradeDay: range.start, endTradeDay: range.end });
 const accountNameOf = (id) => call(`/Statistics/getAccountName?tradingAccountId=${id}`).catch(() => null);
 const todayStatsOf = (id) => call(`/Statistics/todaystats?accountId=${id}`, { method: "POST", body: {} }).catch(() => null);
+// The window's trades in fill order, or null when TopstepX didn't answer ("couldn't read" is not
+// "no trades"). The daily/EOD balance is net of fees + commissions, so an intraday equity
+// reconstruction from these uses tradeNet, which is too.
 const tradesOf = (id, range) =>
-  call("/Statistics/trades", { method: "POST", body: { tradingAccountId: id, startTradeDay: range.start, endTradeDay: range.end } }).catch(() => []);
-
-// Net realized P&L of one trade. The daily/EOD balance is net of fees + commissions,
-// so an intraday equity reconstruction has to be too.
-const tradeNet = (t) => (Number(t.profitAndLoss) || 0) - (Number(t.fees) || 0) - (Number(t.commissions) || 0);
+  call("/Statistics/trades", { method: "POST", body: { tradingAccountId: id, startTradeDay: range.start, endTradeDay: range.end } })
+    .then((rows) => (Array.isArray(rows) ? [...rows].sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))) : null))
+    .catch(() => null);
 
 // Reconstruct each day's intraday equity low from the realized-trade stream. An MLL
 // breach fires the instant intraday equity touches the line, so end-of-day balances
 // miss it — an account can plunge tens of thousands intraday and still close green.
-// For each tradeDay we walk fills in fill order, track the running cumulative net
+// For each tradeDay we walk the fills (tradesOf already orders them), track the running cumulative net
 // P&L, and keep its minimum (floored at 0 = the day's open). Returns
 // { "YYYY-MM-DD": low } where each low <= 0 (loss relative to that day's open).
 export function intradayLowsByDay(trades = []) {
@@ -81,7 +84,6 @@ export function intradayLowsByDay(trades = []) {
   }
   const lows = {};
   for (const [day, rows] of byDay) {
-    rows.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
     let cum = 0;
     let low = 0;
     for (const t of rows) {
@@ -123,6 +125,7 @@ export async function fetchAccountStats(accountId, range) {
     daily: Array.isArray(daily) ? daily : [],
     todaystats,
     intradayLows: intradayLowsByDay(trades),
+    trades,
     range
   };
 }
@@ -142,6 +145,7 @@ export async function fetchWeeklyStats(accountId, range) {
     accountName: typeof accountName === "string" ? accountName : null,
     daily: Array.isArray(daily) ? daily : [],
     todaystats,
-    intradayLows: intradayLowsByDay(trades)
+    intradayLows: intradayLowsByDay(trades),
+    trades
   };
 }

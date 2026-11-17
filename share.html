@@ -78,12 +78,24 @@
     .cell.today { box-shadow: inset 0 0 0 1px rgba(244,192,79,.55); }
     .cell.none { opacity: .45; }
 
+    .tl { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+    .tl th { color: var(--muted-dim); font-size: 10.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; text-align: right; padding: 0 6px 8px; white-space: nowrap; }
+    .tl td { text-align: right; padding: 7px 6px; border-top: 1px solid rgba(255,255,255,.05); white-space: nowrap; }
+    .tl th:nth-child(-n+3), .tl td:nth-child(-n+3) { text-align: left; }
+    .tl td:first-child { color: var(--muted-dim); }
+    .tl tr.newday td { border-top-color: rgba(255,255,255,.14); }
+    .more { display: block; margin: 12px auto 0; background: none; border: 1px solid var(--card-border); color: var(--blue); border-radius: 99px; padding: 7px 16px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .tnote { margin-top: 10px; color: var(--muted-dim); font-size: 11.5px; line-height: 1.5; }
+
     .pos { color: var(--green); } .neg { color: var(--red); } .zero { color: var(--muted); }
     .note { text-align: center; color: var(--muted-dim); font-size: 12.5px; margin-top: 18px; line-height: 1.5; }
     footer { text-align: center; margin-top: 20px; }
     footer a { color: var(--blue); font-weight: 700; font-size: 13px; letter-spacing: .08em; text-decoration: none; }
     .empty { text-align: center; color: var(--muted); padding: 60px 0; line-height: 1.6; }
-    @media (max-width: 420px) { .hero { grid-template-columns: minmax(0,1fr); } .cell .p { font-size: 11.5px; } }
+    @media (max-width: 420px) {
+      .hero { grid-template-columns: minmax(0,1fr); } .cell .p { font-size: 11.5px; }
+      .tl { font-size: 11.5px; } .tl th { font-size: 9px; letter-spacing: .04em; padding: 0 3px 6px; } .tl td { padding: 6px 3px; }
+    }
   </style>
 </head>
 <body>
@@ -188,6 +200,83 @@
       </svg>`;
     }
 
+    // The feed's trades (the latest traded week, in exit order) as consecutive trade numbers, never
+    // clock times: the running net P&L after each trade, with each trade's MFE/MAE as a faint whisker
+    // from the P&L it started at, and day boundaries labeled by date.
+    const tradeNet = (t) => (Number(t.profitAndLoss) || 0) - (Number(t.fees) || 0) - (Number(t.commissions) || 0);
+    const symbolOf = (t) => String(t.symbolId ?? "").replace(/^F\.US\./, "");
+    const exc = (n) => (n == null ? "—" : (n > 0 ? "+" : n < 0 ? "-" : "") + "$" + Math.abs(Math.round(n)).toLocaleString());
+    const SHOWN = 25;
+    let SHOW_ALL = false;
+
+    function tradeCurveSvg(trades) {
+      const W = 640, H = 190, L = 8, R = 8, T = 12, B = 22;
+      let cum = 0;
+      const pts = [{ v: 0 }];
+      for (const [i, t] of trades.entries()) {
+        const from = cum;
+        cum += tradeNet(t);
+        pts.push({ v: cum, from, t, n: i + 1 });
+      }
+      const ext = pts.flatMap((p) => [p.v, p.t?.mfe != null ? p.from + p.t.mfe : p.v, p.t?.mae != null ? p.from + p.t.mae : p.v]);
+      let lo = Math.min(0, ...ext), hi = Math.max(0, ...ext);
+      if (hi - lo < 200) { const mid = (hi + lo) / 2; lo = mid - 100; hi = mid + 100; }
+      const x = (i) => L + (i * (W - L - R)) / Math.max(1, pts.length - 1);
+      const y = (v) => T + ((hi - v) * (H - T - B)) / (hi - lo);
+      const color = cum >= 0 ? "var(--green)" : "var(--red)";
+      const line = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+      const whiskers = pts.slice(1).filter((p) => p.t.mfe != null && p.t.mae != null).map((p) => {
+        const xi = x(p.n - 0.5).toFixed(1);
+        return `<line x1="${xi}" x2="${xi}" y1="${y(p.from + p.t.mfe).toFixed(1)}" y2="${y(p.from + p.t.mae).toFixed(1)}" stroke="rgba(160,180,210,.28)" stroke-width="1" />`;
+      }).join("");
+      const days = [];
+      for (const p of pts.slice(1)) {
+        const d = dateOf(p.t);
+        if (!days.length || days[days.length - 1].date !== d) days.push({ date: d, first: p.n, last: p.n });
+        else days[days.length - 1].last = p.n;
+      }
+      const bounds = days.slice(1).map((d) => {
+        const xi = x(d.first - 1).toFixed(1);
+        return `<line x1="${xi}" x2="${xi}" y1="${T}" y2="${H - B}" stroke="rgba(255,255,255,.09)" />`;
+      }).join("");
+      const labels = days.map((d) => `<text class="axis" x="${x((d.first - 1 + d.last) / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle">${esc(niceDate(d.date))}</text>`).join("");
+      const dots = pts.slice(1).map((p) => `<circle cx="${x(p.n).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="${trades.length > 120 ? 1.6 : 2.4}" fill="${color}"><title>#${p.n} · ${esc(niceDate(dateOf(p.t)))} · ${esc(symbolOf(p.t))} ×${Number(p.t.positionSize)} · ${money(tradeNet(p.t), { sign: true })} · MFE ${exc(p.t.mfe)} · MAE ${exc(p.t.mae)}</title></circle>`).join("");
+      return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Running net P&amp;L after each trade, in trade order">
+        <line x1="${L}" x2="${W - R}" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}" stroke="rgba(255,255,255,.12)" stroke-dasharray="3 4" />
+        ${bounds}${whiskers}
+        <path d="${line}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" />
+        ${dots}${labels}
+      </svg>`;
+    }
+
+    function tradeTable(trades) {
+      const rows = trades.map((t, i) => ({ t, n: i + 1 })).reverse();
+      const shown = SHOW_ALL ? rows : rows.slice(0, SHOWN);
+      const body = shown.map(({ t, n }, i) => {
+        const pnl = tradeNet(t);
+        return `<tr${i > 0 && dateOf(shown[i - 1].t) !== dateOf(t) ? ' class="newday"' : ""}>
+          <td>${n}</td><td>${esc(niceDate(dateOf(t), { month: "short", day: "numeric" }))}</td><td>${esc(symbolOf(t))}</td>
+          <td>${Number(t.positionSize)}</td><td class="${cls(pnl)}">${money(pnl, { sign: true })}</td>
+          <td class="${t.mfe == null ? "zero" : cls(t.mfe)}">${exc(t.mfe)}</td><td class="${t.mae == null ? "zero" : cls(t.mae)}">${exc(t.mae)}</td>
+        </tr>`;
+      }).join("");
+      const more = rows.length > SHOWN ? `<button class="more" id="moreTrades">${SHOW_ALL ? "Show the latest " + SHOWN : `Show all ${rows.length} trades`}</button>` : "";
+      return `<table class="tl"><thead><tr><th>#</th><th>Date</th><th>Symbol</th><th>Size</th><th>P&amp;L</th><th>MFE</th><th>MAE</th></tr></thead><tbody>${body}</tbody></table>${more}`;
+    }
+
+    function tradesPanel(doc) {
+      const trades = Array.isArray(doc.trades) ? doc.trades : [];
+      if (!trades.length) return "";
+      const first = dateOf(trades[0]), last = dateOf(trades[trades.length - 1]);
+      const span = first === last ? niceDate(first) : `${niceDate(first, { month: "short", day: "numeric" })} – ${niceDate(last, { month: "short", day: "numeric" })}`;
+      return `<section class="panel curve"><h2>Trades · ${esc(span)}</h2>${tradeCurveSvg(trades)}
+          <div class="tnote">Each dot is a trade, in order: the line is net P&amp;L after it; the faint bar is how far the trade ran for (MFE) and against (MAE) from where it started.</div>
+        </section>
+        <section class="panel"><h2>Trade list</h2>${tradeTable(trades)}
+          <div class="tnote">P&amp;L is net of TopstepX fees. MFE and MAE are the best and worst the trade got while open, before fees. Dates only: trade times aren't shared.</div>
+        </section>`;
+    }
+
     // Mon–Fri grid of trade dates, one row per week from the first traded week to this one.
     function calendar(doc, sched) {
       const byDate = new Map(doc.daily.map((r) => [dateOf(r), r]));
@@ -265,13 +354,16 @@
           </div>` : ""}
         </section>
         <section class="panel curve"><h2>Balance</h2>${curveSvg(doc)}</section>
-        <section class="panel"><h2>Daily P&amp;L</h2>${calendar(doc, sched)}</section>`;
+        <section class="panel"><h2>Daily P&amp;L</h2>${calendar(doc, sched)}</section>
+        ${tradesPanel(doc)}`;
+      const more = $("moreTrades");
+      if (more) more.onclick = () => { SHOW_ALL = !SHOW_ALL; draw(doc); };
 
       const since = niceDate(doc.startTradeDay, { month: "short", day: "numeric", year: "numeric" });
       const settling = Number(doc.pendingTrades) || 0;
       $("note").innerHTML = (settling ? `<b>${settling} trade${settling === 1 ? "" : "s"} just closed and ${settling === 1 ? "is" : "are"} still settling</b> — not counted yet. ` : "") +
         `Bot account on ${esc(doc.platform)}, shown as a ${esc((doc.accountSize / 1000).toFixed(0))}K account from ${esc(since)}. ` +
-        `P&amp;L is net of TopstepX fees. The trade log isn't shared.`;
+        `P&amp;L is net of TopstepX fees. Trades are listed by date, without times.`;
     }
 
     async function refresh() {

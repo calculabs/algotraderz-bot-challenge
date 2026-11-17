@@ -3,9 +3,9 @@
 // Worker serves them at <worker>/feed/<id>; a feed's public link is this site's own stats page,
 // share.html?feed=<id>, so a feed competitor is configured exactly like a TopstepX one.
 //
-// A feed document carries the same `daily` / `todaystats` rows and `intradayLows` map that
-// fetchAccountStats builds from TopstepX, so computeMetrics scores both the same way. It never
-// carries a trade list.
+// A feed document carries the same `daily` / `todaystats` rows, `intradayLows` map and `trades`
+// rows that fetchAccountStats builds from TopstepX, so computeMetrics scores both the same way. Its
+// trades are the latest week's, in exit order, each with its MFE and MAE and without any time.
 
 import { ROSTER_ENDPOINT } from "./roster.mjs";
 
@@ -51,6 +51,7 @@ export async function fetchFeedStats(id, range) {
     daily: doc.daily.filter(inRange),
     todaystats: doc.todaystats.filter(inRange),
     intradayLows: doc.intradayLows,
+    trades: Array.isArray(doc.trades) ? doc.trades.filter(inRange) : null,
     asOf: doc.asOf,
     range
   };

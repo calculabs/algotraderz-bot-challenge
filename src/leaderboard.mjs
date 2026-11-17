@@ -32,6 +32,25 @@ const pctOf = (pnl, size) => (size ? round4((pnl / size) * 100) : null);
 // are large, so we always rank on net P&L.
 const netPnl = (r) => toNum(r.totalPnL) - toNum(r.totalFees) - toNum(r.totalCommissions);
 
+// Net realized P&L of one trade row (TopstepX's /Statistics/trades shape, which a feed mirrors).
+export const tradeNet = (t) => toNum(t.profitAndLoss) - toNum(t.fees) - toNum(t.commissions);
+
+// The running net P&L over a window's closed trades in order, from 0 at the window's open: the
+// highest it reached (MFE, >= 0) and the lowest (MAE, <= 0). Realized P&L only — TopstepX's public
+// trades carry no prices, so no source here can see an open position's swing.
+function excursion(nets) {
+  let cum = 0;
+  let mfe = 0;
+  let mae = 0;
+  for (const n of nets) {
+    cum += n;
+    mfe = Math.max(mfe, cum);
+    mae = Math.min(mae, cum);
+  }
+  return { mfe: round2(mfe), mae: round2(mae) };
+}
+const NO_EXCURSION = { mfe: null, mae: null };
+
 // Topstep Maximum Loss Limit (the trailing max-loss "drawdown"), by account size.
 export const MLL_BY_SIZE = { 50000: 2000, 100000: 3000, 150000: 4500 };
 
@@ -95,6 +114,8 @@ function normalizeToday(t) {
 }
 
 // weekDays: [{ day, date, state }] from the schedule. currentDay drives the live overlay.
+// stats.trades is the window's trade rows in fill order, or null when they couldn't be read; a
+// window without them shows no MFE/MAE rather than a made-up one.
 export function computeMetrics(stats, weekDays = [], { currentDay = 0 } = {}) {
   const daily = [...(stats.daily || [])].filter((r) => r && r.tradeDay);
   const byDate = new Map(daily.map((r) => [String(r.tradeDay).slice(0, 10), r]));
@@ -106,6 +127,15 @@ export function computeMetrics(stats, weekDays = [], { currentDay = 0 } = {}) {
   // Practice accounts are always 150k; combines carry their size in the name.
   const accountSize = accountSizeFromName(stats.accountName) ?? 150000;
   const today = normalizeToday(stats.todaystats);
+  let netsByDate = null;
+  if (Array.isArray(stats.trades)) {
+    netsByDate = new Map();
+    for (const t of stats.trades) {
+      const date = String(t.tradeDay ?? "").slice(0, 10);
+      if (!netsByDate.has(date)) netsByDate.set(date, []);
+      netsByDate.get(date).push(tradeNet(t));
+    }
+  }
 
   const days = {};
   let daysTraded = 0;
@@ -117,6 +147,8 @@ export function computeMetrics(stats, weekDays = [], { currentDay = 0 } = {}) {
     const traded = !!row;
     if (traded) daysTraded++;
     const pnl = row ? round2(netPnl(row)) : 0;
+    const nets = traded && netsByDate ? netsByDate.get(date) : null;
+    const { mfe, mae } = nets ? excursion(nets) : NO_EXCURSION;
     const wins = row ? toNum(row.winningTrades) : 0;
     const losses = row ? toNum(row.losingTrades) : 0;
     days[day] = {
@@ -127,6 +159,8 @@ export function computeMetrics(stats, weekDays = [], { currentDay = 0 } = {}) {
       pnl,
       return_pct: accountSize ? pctOf(pnl, accountSize) : null,
       trades: row ? toNum(row.totalTrades) : 0,
+      mfe,
+      mae,
       win_rate: wins + losses ? round2((wins / (wins + losses)) * 100) : null,
       balance: row && row.balance != null ? round2(toNum(row.balance)) : null
     };
@@ -135,6 +169,8 @@ export function computeMetrics(stats, weekDays = [], { currentDay = 0 } = {}) {
   const weekRows = weekDays.map((d) => days[d.day]).filter((d) => d.traded);
   const overallPnl = round2(weekRows.reduce((a, d) => a + d.pnl, 0));
   const overallTrades = weekRows.reduce((a, d) => a + d.trades, 0);
+  const weekKnown = weekRows.length && netsByDate && weekRows.every((d) => netsByDate.has(d.date));
+  const overallExcursion = weekKnown ? excursion(weekRows.flatMap((d) => netsByDate.get(d.date))) : NO_EXCURSION;
 
   return {
     account_size: accountSize,
@@ -145,6 +181,7 @@ export function computeMetrics(stats, weekDays = [], { currentDay = 0 } = {}) {
       pnl: overallPnl,
       return_pct: pctOf(overallPnl, accountSize),
       trades: overallTrades,
+      ...overallExcursion,
       balance: latestBalance
     },
     days
@@ -167,7 +204,7 @@ export function buildRow(participant, accountId, metrics, { source, shared = nul
     balance: metrics.balance ?? null,
     days_traded: metrics.days_traded ?? 0,
     drawdown: metrics.drawdown ?? null,
-    overall: metrics.overall ?? { pnl: 0, return_pct: null, trades: 0, balance: null },
+    overall: metrics.overall ?? { pnl: 0, return_pct: null, trades: 0, ...NO_EXCURSION, balance: null },
     days: metrics.days ?? {}
   };
 }
@@ -194,6 +231,9 @@ export function flattenScope(row, scope, currentDay = 0) {
     // flag, so for the overall scope derive it from days_traded — defaulting to true would
     // mark someone who never placed a trade as a competitor.
     traded: scope === "overall" ? (row.days_traded ?? 0) > 0 : !!(scopeM && scopeM.traded),
+    trades: scopeM ? scopeM.trades ?? 0 : 0,
+    mfe: scopeM?.mfe ?? null,
+    mae: scopeM?.mae ?? null,
     week_pnl: row.overall?.pnl ?? zero,
     week_return: row.overall?.return_pct ?? zero,
     today_pnl: todayM ? todayM.pnl : zero,
