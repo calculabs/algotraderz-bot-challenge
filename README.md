@@ -7,10 +7,11 @@ static [GitHub Pages](https://pages.github.com/) site.
 - **Week:** every week resets to 0 and follows the futures session clock, **Sunday 3pm →
   Friday 2pm** (5 daily sessions of 3pm → 2pm; the account size is snapped from the balance).
 - **Day navigation:** click any day to see that session's standings; the current, unfinished
-  day updates **in motion**. Each card shows **week-to-date** and **today's** P&L, plus the
-  selected window's **trades**, **MFE** and **MAE**: the highest and lowest the running net P&L
-  reached from the window's open, from the account's closed trades in order (realized only:
-  TopstepX's public trades carry no prices, so an open position's swing isn't visible).
+  day updates **in motion**. Each card shows **week-to-date** and **today's** P&L, the selected
+  window's **trades**, and a session's **MFE** and **MAE** (today's on Overall, the day's on a day
+  tab): the highest and lowest the running net P&L reached from that session's open, from the
+  account's closed trades in order (realized only: TopstepX's public trades carry no prices, so an
+  open position's swing isn't visible).
 - **Rank by:** a toggle switches the ordering between **% return** and **raw $ P&L**, within
   whatever time window (Overall or a single day) is selected.
 - **Data:** read straight from TopstepX's public JSON API — no login, no browser, no

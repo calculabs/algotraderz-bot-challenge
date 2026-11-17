@@ -234,6 +234,8 @@ export function flattenScope(row, scope, currentDay = 0) {
     trades: scopeM ? scopeM.trades ?? 0 : 0,
     mfe: scopeM?.mfe ?? null,
     mae: scopeM?.mae ?? null,
+    today_mfe: todayM?.mfe ?? null,
+    today_mae: todayM?.mae ?? null,
     week_pnl: row.overall?.pnl ?? zero,
     week_return: row.overall?.return_pct ?? zero,
     today_pnl: todayM ? todayM.pnl : zero,
