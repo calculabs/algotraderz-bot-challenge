@@ -77,6 +77,13 @@
     .cell.loss { background: rgba(247,112,102,.07); border-color: rgba(247,112,102,.22); }
     .cell.today { box-shadow: inset 0 0 0 1px rgba(244,192,79,.55); }
     .cell.none { opacity: .45; }
+    button.cell { font: inherit; color: inherit; width: 100%; cursor: pointer; }
+    .cell.pick:hover { border-color: rgba(255,255,255,.28); }
+    .cell.sel { box-shadow: inset 0 0 0 2px var(--blue); border-color: transparent; }
+    .phead { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+    .phead h2 { margin-bottom: 8px; }
+    .clear { background: none; border: 1px solid var(--card-border); color: var(--blue); border-radius: 99px; padding: 4px 11px; font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .psum { font-weight: 700; font-size: 14px; margin-bottom: 10px; color: var(--muted); }
 
     .tl { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
     .tl th { color: var(--muted-dim); font-size: 10.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; text-align: right; padding: 0 6px 8px; white-space: nowrap; }
@@ -202,21 +209,26 @@
 
     // The feed's trades (the latest traded week, in exit order) as consecutive trade numbers, never
     // clock times: the running net P&L after each trade, with each trade's MFE/MAE as a faint whisker
-    // from the P&L it started at, and day boundaries labeled by date.
+    // from the P&L it started at, and day boundaries labeled by date. Clicking a day in the Daily P&L
+    // grid narrows the chart (running from that day's open) and the list to it; trade numbers stay
+    // the week's.
     const tradeNet = (t) => (Number(t.profitAndLoss) || 0) - (Number(t.fees) || 0) - (Number(t.commissions) || 0);
     const symbolOf = (t) => String(t.symbolId ?? "").replace(/^F\.US\./, "");
     const exc = (n) => (n == null ? "—" : (n > 0 ? "+" : n < 0 ? "-" : "") + "$" + Math.abs(Math.round(n)).toLocaleString());
     const SHOWN = 25;
     let SHOW_ALL = false;
+    let DAY = null;
 
-    function tradeCurveSvg(trades) {
+    const numbered = (doc) => (Array.isArray(doc.trades) ? doc.trades : []).map((t, i) => ({ t, n: i + 1 }));
+
+    function tradeCurveSvg(items) {
       const W = 640, H = 190, L = 8, R = 8, T = 12, B = 22;
       let cum = 0;
       const pts = [{ v: 0 }];
-      for (const [i, t] of trades.entries()) {
+      for (const { t, n } of items) {
         const from = cum;
         cum += tradeNet(t);
-        pts.push({ v: cum, from, t, n: i + 1 });
+        pts.push({ v: cum, from, t, n });
       }
       const ext = pts.flatMap((p) => [p.v, p.t?.mfe != null ? p.from + p.t.mfe : p.v, p.t?.mae != null ? p.from + p.t.mae : p.v]);
       let lo = Math.min(0, ...ext), hi = Math.max(0, ...ext);
@@ -225,22 +237,20 @@
       const y = (v) => T + ((hi - v) * (H - T - B)) / (hi - lo);
       const color = cum >= 0 ? "var(--green)" : "var(--red)";
       const line = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
-      const whiskers = pts.slice(1).filter((p) => p.t.mfe != null && p.t.mae != null).map((p) => {
-        const xi = x(p.n - 0.5).toFixed(1);
-        return `<line x1="${xi}" x2="${xi}" y1="${y(p.from + p.t.mfe).toFixed(1)}" y2="${y(p.from + p.t.mae).toFixed(1)}" stroke="rgba(160,180,210,.28)" stroke-width="1" />`;
-      }).join("");
+      const whiskers = pts.map((p, i) => (i && p.t.mfe != null && p.t.mae != null)
+        ? `<line x1="${x(i - 0.5).toFixed(1)}" x2="${x(i - 0.5).toFixed(1)}" y1="${y(p.from + p.t.mfe).toFixed(1)}" y2="${y(p.from + p.t.mae).toFixed(1)}" stroke="rgba(160,180,210,.28)" stroke-width="1" />`
+        : "").join("");
       const days = [];
-      for (const p of pts.slice(1)) {
+      pts.forEach((p, i) => {
+        if (!i) return;
         const d = dateOf(p.t);
-        if (!days.length || days[days.length - 1].date !== d) days.push({ date: d, first: p.n, last: p.n });
-        else days[days.length - 1].last = p.n;
-      }
-      const bounds = days.slice(1).map((d) => {
-        const xi = x(d.first - 1).toFixed(1);
-        return `<line x1="${xi}" x2="${xi}" y1="${T}" y2="${H - B}" stroke="rgba(255,255,255,.09)" />`;
-      }).join("");
+        if (!days.length || days[days.length - 1].date !== d) days.push({ date: d, first: i, last: i });
+        else days[days.length - 1].last = i;
+      });
+      const bounds = days.slice(1).map((d) => `<line x1="${x(d.first - 1).toFixed(1)}" x2="${x(d.first - 1).toFixed(1)}" y1="${T}" y2="${H - B}" stroke="rgba(255,255,255,.09)" />`).join("");
       const labels = days.map((d) => `<text class="axis" x="${x((d.first - 1 + d.last) / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle">${esc(niceDate(d.date))}</text>`).join("");
-      const dots = pts.slice(1).map((p) => `<circle cx="${x(p.n).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="${trades.length > 120 ? 1.6 : 2.4}" fill="${color}"><title>#${p.n} · ${esc(niceDate(dateOf(p.t)))} · ${esc(symbolOf(p.t))} ×${Number(p.t.positionSize)} · ${money(tradeNet(p.t), { sign: true })} · MFE ${exc(p.t.mfe)} · MAE ${exc(p.t.mae)}</title></circle>`).join("");
+      const r = items.length > 120 ? 1.6 : items.length > 40 ? 2.2 : 3;
+      const dots = pts.map((p, i) => i ? `<circle cx="${x(i).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="${r}" fill="${color}"><title>#${p.n} · ${esc(niceDate(dateOf(p.t)))} · ${esc(symbolOf(p.t))} ×${Number(p.t.positionSize)} · ${money(tradeNet(p.t), { sign: true })} · MFE ${exc(p.t.mfe)} · MAE ${exc(p.t.mae)}</title></circle>` : "").join("");
       return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Running net P&amp;L after each trade, in trade order">
         <line x1="${L}" x2="${W - R}" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}" stroke="rgba(255,255,255,.12)" stroke-dasharray="3 4" />
         ${bounds}${whiskers}
@@ -249,8 +259,8 @@
       </svg>`;
     }
 
-    function tradeTable(trades) {
-      const rows = trades.map((t, i) => ({ t, n: i + 1 })).reverse();
+    function tradeTable(items) {
+      const rows = [...items].reverse();
       const shown = SHOW_ALL ? rows : rows.slice(0, SHOWN);
       const body = shown.map(({ t, n }, i) => {
         const pnl = tradeNet(t);
@@ -265,21 +275,31 @@
     }
 
     function tradesPanel(doc) {
-      const trades = Array.isArray(doc.trades) ? doc.trades : [];
-      if (!trades.length) return "";
-      const first = dateOf(trades[0]), last = dateOf(trades[trades.length - 1]);
-      const span = first === last ? niceDate(first) : `${niceDate(first, { month: "short", day: "numeric" })} – ${niceDate(last, { month: "short", day: "numeric" })}`;
-      return `<section class="panel curve"><h2>Trades · ${esc(span)}</h2>${tradeCurveSvg(trades)}
-          <div class="tnote">Each dot is a trade, in order: the line is net P&amp;L after it; the faint bar is how far the trade ran for (MFE) and against (MAE) from where it started.</div>
+      const all = numbered(doc);
+      if (!all.length) return "";
+      const items = DAY ? all.filter(({ t }) => dateOf(t) === DAY) : all;
+      const first = dateOf(all[0].t), last = dateOf(all[all.length - 1].t);
+      const span = DAY ? niceDate(DAY)
+        : first === last ? niceDate(first)
+        : `${niceDate(first, { month: "short", day: "numeric" })} – ${niceDate(last, { month: "short", day: "numeric" })}`;
+      const clear = DAY ? `<button class="clear" id="allDays">All days ×</button>` : "";
+      const total = items.reduce((a, { t }) => a + tradeNet(t), 0);
+      const summary = DAY ? `<span class="${cls(total)}">${money(total, { sign: true })}</span> · ${items.length} trade${items.length === 1 ? "" : "s"}` : "";
+      return `<section class="panel curve"><div class="phead"><h2>Trades · ${esc(span)}</h2>${clear}</div>
+          ${summary ? `<div class="psum">${summary}</div>` : ""}
+          ${tradeCurveSvg(items)}
+          <div class="tnote">Each dot is a trade, in order: the line is net P&amp;L after it${DAY ? ", from the day's open" : ""}; the faint bar is how far the trade ran for (MFE) and against (MAE) from where it started.</div>
         </section>
-        <section class="panel"><h2>Trade list</h2>${tradeTable(trades)}
+        <section class="panel"><h2>Trade list${DAY ? " · " + esc(niceDate(DAY)) : ""}</h2>${tradeTable(items)}
           <div class="tnote">P&amp;L is net of TopstepX fees. MFE and MAE are the best and worst the trade got while open, before fees. Dates only: trade times aren't shared.</div>
         </section>`;
     }
 
-    // Mon–Fri grid of trade dates, one row per week from the first traded week to this one.
+    // Mon–Fri grid of trade dates, one row per week from the first traded week to this one. A day
+    // the feed has trades for is a button that filters the trade chart and list to it.
     function calendar(doc, sched) {
       const byDate = new Map(doc.daily.map((r) => [dateOf(r), r]));
+      const listed = new Set(numbered(doc).map(({ t }) => dateOf(t)));
       const today = sched.phase === "done" ? null : sched.days.find((d) => d.state === "live")?.date ?? null;
       const dates = [...byDate.keys(), ...sched.days.map((d) => d.date)].sort();
       const monday = (iso) => { const d = new Date(iso + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d; };
@@ -294,18 +314,23 @@
           const r = byDate.get(iso);
           const n = r ? net(r) : null;
           const tone = r ? (n > 0 ? "win" : n < 0 ? "loss" : "") : "none";
-          cells.push(`<div class="cell ${tone} ${iso === today ? "today" : ""}">
+          const pick = listed.has(iso);
+          const tag = pick ? "button" : "div";
+          const attrs = pick ? ` type="button" data-day="${iso}" aria-pressed="${iso === DAY}" title="${iso === DAY ? "Show all days" : "Show this day's trades"}"` : "";
+          cells.push(`<${tag} class="cell ${tone} ${iso === today ? "today" : ""}${pick ? " pick" : ""}${iso === DAY ? " sel" : ""}"${attrs}>
             <div class="d">${esc(niceDate(iso, { month: "short", day: "numeric" }))}</div>
             ${r ? `<div class="p ${cls(n)}">${money(n, { sign: true, dp: 0 })}</div><div class="t">${r.totalTrades} trade${r.totalTrades === 1 ? "" : "s"}</div>`
                 : `<div class="t">${iso === today ? "live" : "—"}</div>`}
-          </div>`);
+          </${tag}>`);
         }
         rows.push(cells.join(""));
       }
-      return `<div class="cal">${["Mon", "Tue", "Wed", "Thu", "Fri"].map((d) => `<div class="hd">${d}</div>`).join("")}${rows.reverse().join("")}</div>`;
+      const hint = listed.size ? `<div class="tnote">Click a day to see its trades.</div>` : "";
+      return `<div class="cal">${["Mon", "Tue", "Wed", "Thu", "Fri"].map((d) => `<div class="hd">${d}</div>`).join("")}${rows.reverse().join("")}</div>${hint}`;
     }
 
     function draw(doc) {
+      if (DAY && !numbered(doc).some(({ t }) => dateOf(t) === DAY)) DAY = null;
       const sched = weekSchedule(new Date());
       const life = lifetime(doc);
       const wk = weekView(doc, sched);
@@ -358,6 +383,10 @@
         ${tradesPanel(doc)}`;
       const more = $("moreTrades");
       if (more) more.onclick = () => { SHOW_ALL = !SHOW_ALL; draw(doc); };
+      const pick = (day) => { DAY = day; SHOW_ALL = false; draw(doc); };
+      for (const cell of $("main").querySelectorAll(".cell[data-day]")) cell.onclick = () => pick(DAY === cell.dataset.day ? null : cell.dataset.day);
+      const allDays = $("allDays");
+      if (allDays) allDays.onclick = () => pick(null);
 
       const since = niceDate(doc.startTradeDay, { month: "short", day: "numeric", year: "numeric" });
       const settling = Number(doc.pendingTrades) || 0;
