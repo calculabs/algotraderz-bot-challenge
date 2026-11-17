@@ -268,7 +268,9 @@
         <section class="panel"><h2>Daily P&amp;L</h2>${calendar(doc, sched)}</section>`;
 
       const since = niceDate(doc.startTradeDay, { month: "short", day: "numeric", year: "numeric" });
-      $("note").innerHTML = `Bot account on ${esc(doc.platform)}, shown as a ${esc((doc.accountSize / 1000).toFixed(0))}K account from ${esc(since)}. ` +
+      const settling = Number(doc.pendingTrades) || 0;
+      $("note").innerHTML = (settling ? `<b>${settling} trade${settling === 1 ? "" : "s"} just closed and ${settling === 1 ? "is" : "are"} still settling</b> — not counted yet. ` : "") +
+        `Bot account on ${esc(doc.platform)}, shown as a ${esc((doc.accountSize / 1000).toFixed(0))}K account from ${esc(since)}. ` +
         `P&amp;L is net of TopstepX fees. The trade log isn't shared.`;
     }
 
