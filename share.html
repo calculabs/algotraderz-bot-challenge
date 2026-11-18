@@ -66,6 +66,10 @@
 
     .curve svg { display: block; width: 100%; height: auto; }
     .curve .axis { fill: var(--muted-dim); font-size: 10px; font-weight: 600; }
+    .dayx line { stroke-width: 1; stroke-dasharray: 4 3; opacity: .55; }
+    .dayx line.mfe { stroke: var(--green); } .dayx line.mae { stroke: var(--red); }
+    .dayx .xl { font-size: 9.5px; font-weight: 700; opacity: .85; }
+    .dayx .xl.mfe { fill: var(--green); } .dayx .xl.mae { fill: var(--red); }
 
     .cal { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
     .cal .hd { color: var(--muted-dim); font-size: 10.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; text-align: center; padding-bottom: 2px; }
@@ -101,6 +105,7 @@
     .empty { text-align: center; color: var(--muted); padding: 60px 0; line-height: 1.6; }
     @media (max-width: 420px) {
       .hero { grid-template-columns: minmax(0,1fr); } .cell .p { font-size: 11.5px; }
+      .curve .axis, .dayx .xl { font-size: 19px; }
       .tl { font-size: 11.5px; } .tl th { font-size: 9px; letter-spacing: .04em; padding: 0 3px 6px; } .tl td { padding: 6px 3px; }
     }
   </style>
@@ -120,7 +125,7 @@
   <script type="module">
     import { fetchFeed, parseFeedId } from "./src/feed-api.mjs";
     import { weekSchedule } from "./src/calendar.mjs";
-    import { computeMetrics, MLL_BY_SIZE } from "./src/leaderboard.mjs";
+    import { computeMetrics, excursion, MLL_BY_SIZE, tradeNet } from "./src/leaderboard.mjs";
 
     const $ = (id) => document.getElementById(id);
     const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -209,10 +214,10 @@
 
     // The feed's trades (the latest traded week, in exit order) as consecutive trade numbers, never
     // clock times: the running net P&L after each trade, with each trade's MFE/MAE as a faint whisker
-    // from the P&L it started at, and day boundaries labeled by date. Clicking a day in the Daily P&L
-    // grid narrows the chart (running from that day's open) and the list to it; trade numbers stay
-    // the week's.
-    const tradeNet = (t) => (Number(t.profitAndLoss) || 0) - (Number(t.fees) || 0) - (Number(t.commissions) || 0);
+    // from the P&L it started at, and day boundaries labeled by date. Dashed lines mark each day's
+    // MFE and MAE: the highest and lowest its running net P&L got from that day's open, the board
+    // cards' measure. Clicking a day in the Daily P&L grid narrows the chart (running from that
+    // day's open) and the list to it; trade numbers stay the week's.
     const symbolOf = (t) => String(t.symbolId ?? "").replace(/^F\.US\./, "");
     const exc = (n) => (n == null ? "—" : (n > 0 ? "+" : n < 0 ? "-" : "") + "$" + Math.abs(Math.round(n)).toLocaleString());
     const SHOWN = 25;
@@ -222,7 +227,7 @@
     const numbered = (doc) => (Array.isArray(doc.trades) ? doc.trades : []).map((t, i) => ({ t, n: i + 1 }));
 
     function tradeCurveSvg(items) {
-      const W = 640, H = 190, L = 8, R = 8, T = 12, B = 22;
+      const W = 640, H = 236, L = 8, R = 8, T = 26, B = 50;
       let cum = 0;
       const pts = [{ v: 0 }];
       for (const { t, n } of items) {
@@ -247,13 +252,25 @@
         if (!days.length || days[days.length - 1].date !== d) days.push({ date: d, first: i, last: i });
         else days[days.length - 1].last = i;
       });
+      const dayLines = days.map((d) => {
+        const open = pts[d.first - 1].v;
+        const { mfe, mae } = excursion(pts.slice(d.first, d.last + 1).map((p) => tradeNet(p.t)));
+        const x0 = x(d.first - 1).toFixed(1), x1 = x(d.last).toFixed(1);
+        const hi = y(open + mfe), lo = y(open + mae);
+        return `<g class="dayx"><title>${esc(niceDate(d.date))}: MFE ${exc(mfe)} · MAE ${exc(mae)} from the day's open</title>
+          <line x1="${x0}" x2="${x1}" y1="${hi.toFixed(1)}" y2="${hi.toFixed(1)}" class="mfe" />
+          <line x1="${x0}" x2="${x1}" y1="${lo.toFixed(1)}" y2="${lo.toFixed(1)}" class="mae" />
+          <text class="xl mfe" x="${x1}" y="${(hi - 4).toFixed(1)}" text-anchor="end">MFE ${exc(mfe)}</text>
+          <text class="xl mae" x="${x1}" y="${(lo + 3).toFixed(1)}" text-anchor="end" dominant-baseline="hanging">MAE ${exc(mae)}</text>
+        </g>`;
+      }).join("");
       const bounds = days.slice(1).map((d) => `<line x1="${x(d.first - 1).toFixed(1)}" x2="${x(d.first - 1).toFixed(1)}" y1="${T}" y2="${H - B}" stroke="rgba(255,255,255,.09)" />`).join("");
       const labels = days.map((d) => `<text class="axis" x="${x((d.first - 1 + d.last) / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle">${esc(niceDate(d.date))}</text>`).join("");
       const r = items.length > 120 ? 1.6 : items.length > 40 ? 2.2 : 3;
       const dots = pts.map((p, i) => i ? `<circle cx="${x(i).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="${r}" fill="${color}"><title>#${p.n} · ${esc(niceDate(dateOf(p.t)))} · ${esc(symbolOf(p.t))} ×${Number(p.t.positionSize)} · ${money(tradeNet(p.t), { sign: true })} · MFE ${exc(p.t.mfe)} · MAE ${exc(p.t.mae)}</title></circle>` : "").join("");
       return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Running net P&amp;L after each trade, in trade order">
         <line x1="${L}" x2="${W - R}" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}" stroke="rgba(255,255,255,.12)" stroke-dasharray="3 4" />
-        ${bounds}${whiskers}
+        ${bounds}${whiskers}${dayLines}
         <path d="${line}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" />
         ${dots}${labels}
       </svg>`;
@@ -284,11 +301,12 @@
         : `${niceDate(first, { month: "short", day: "numeric" })} – ${niceDate(last, { month: "short", day: "numeric" })}`;
       const clear = DAY ? `<button class="clear" id="allDays">All days ×</button>` : "";
       const total = items.reduce((a, { t }) => a + tradeNet(t), 0);
-      const summary = DAY ? `<span class="${cls(total)}">${money(total, { sign: true })}</span> · ${items.length} trade${items.length === 1 ? "" : "s"}` : "";
+      const dayX = DAY ? excursion(items.map(({ t }) => tradeNet(t))) : null;
+      const summary = DAY ? `<span class="${cls(total)}">${money(total, { sign: true })}</span> · ${items.length} trade${items.length === 1 ? "" : "s"} · MFE <span class="${cls(dayX.mfe)}">${exc(dayX.mfe)}</span> · MAE <span class="${cls(dayX.mae)}">${exc(dayX.mae)}</span>` : "";
       return `<section class="panel curve"><div class="phead"><h2>Trades · ${esc(span)}</h2>${clear}</div>
           ${summary ? `<div class="psum">${summary}</div>` : ""}
           ${tradeCurveSvg(items)}
-          <div class="tnote">Each dot is a trade, in order: the line is net P&amp;L after it${DAY ? ", from the day's open" : ""}; the faint bar is how far the trade ran for (MFE) and against (MAE) from where it started.</div>
+          <div class="tnote">Each dot is a trade, in order: the line is net P&amp;L after it${DAY ? ", from the day's open" : ""}; the faint bar is how far the trade ran for (MFE) and against (MAE) from where it started. Dashed lines mark the day's MFE and MAE: the highest and lowest its net P&amp;L got from the day's open.</div>
         </section>
         <section class="panel"><h2>Trade list${DAY ? " · " + esc(niceDate(DAY)) : ""}</h2>${tradeTable(items)}
           <div class="tnote">P&amp;L is net of TopstepX fees. MFE and MAE are the best and worst the trade got while open, before fees. Dates only: trade times aren't shared.</div>

@@ -38,7 +38,7 @@ export const tradeNet = (t) => toNum(t.profitAndLoss) - toNum(t.fees) - toNum(t.
 // The running net P&L over a window's closed trades in order, from 0 at the window's open: the
 // highest it reached (MFE, >= 0) and the lowest (MAE, <= 0). Realized P&L only — TopstepX's public
 // trades carry no prices, so no source here can see an open position's swing.
-function excursion(nets) {
+export function excursion(nets) {
   let cum = 0;
   let mfe = 0;
   let mae = 0;
